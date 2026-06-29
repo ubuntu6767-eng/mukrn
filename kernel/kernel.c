@@ -13,6 +13,7 @@ extern unsigned char _binary_command_bin_start[];
 extern unsigned char _binary_command_bin_end[];
 extern unsigned char _binary_keyboard_driver_bin_start[];
 extern unsigned char _binary_keyboard_driver_bin_end[];
+// also declared in task.c for embed table
 
 void __attribute__((section(".entry"))) kmain(void)
 {

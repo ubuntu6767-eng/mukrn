@@ -28,8 +28,7 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return max;
     }
     case SYSCALL_EXIT:
-        puts("[kernel] Process exited\r\n");
-        for (;;) __asm__ volatile("cli; hlt");
+        sys_exit();
         return 0;
     case SYSCALL_GETPID:
         return sys_getpid();
@@ -49,6 +48,10 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
     case SYSCALL_OUTB:
         outb((u16)arg1, (u8)arg2);
         return 0;
+    case SYSCALL_SPAWN:
+        return sys_spawn(arg1);
+    case SYSCALL_WAIT:
+        return sys_wait(arg1);
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);

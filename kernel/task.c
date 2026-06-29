@@ -4,6 +4,19 @@
 #include "serial.h"
 #include "idt.h"
 
+extern unsigned char _binary_keyboard_driver_bin_start[];
+extern unsigned char _binary_keyboard_driver_bin_end[];
+extern unsigned char _binary_command_bin_start[];
+extern unsigned char _binary_command_bin_end[];
+extern unsigned char _binary_shell_bin_start[];
+extern unsigned char _binary_shell_bin_end[];
+
+embed_prog_t embedded[EMBED_COUNT] = {
+    { _binary_keyboard_driver_bin_start, _binary_keyboard_driver_bin_end, 0x400000 },
+    { _binary_command_bin_start,         _binary_command_bin_end,         0x500000 },
+    { _binary_shell_bin_start,           _binary_shell_bin_end,           0x600000 },
+};
+
 task_t tasks[MAX_TASKS];
 int current_task = -1;
 int num_tasks = 0;
@@ -83,6 +96,9 @@ void create_process(void *binary, u64 size, u64 load_addr)
     t->stack_phys = (u64)kstack;
     t->user_stack_phys = 0;
     t->pml4_phys = new_pml4;
+    t->load_addr = load_addr;
+    t->code_pages = code_pages;
+    t->wait_idx = -1;
     ipc_init_task(t);
     num_tasks++;
 
@@ -173,4 +189,44 @@ int sys_recv(ipc_msg_t *msg)
     t->ipc_count--;
 
     return 0;
+}
+
+int sys_spawn(u64 idx)
+{
+    if (idx >= EMBED_COUNT) return -1;
+    embed_prog_t *p = &embedded[idx];
+    u64 size = (u64)p->end - (u64)p->start;
+    if (size == 0) return -1;
+    int prev = num_tasks;
+    create_process((void*)p->start, size, p->load_addr);
+    if (num_tasks == prev) return -1;
+    return tasks[prev].pid;
+}
+
+void sys_exit(void)
+{
+    if (current_task < 0) return;
+    task_t *t = &tasks[current_task];
+
+    if (t->wait_idx >= 0)
+        tasks[t->wait_idx].state = TASK_READY;
+
+    t->state = TASK_EXITED;
+
+    puts("[kernel] Process #");
+    puthex(t->pid);
+    puts(" exited\r\n");
+}
+
+int sys_wait(u64 pid)
+{
+    for (int i = 0; i < num_tasks; i++) {
+        if (tasks[i].pid == pid) {
+            if (tasks[i].state == TASK_EXITED) return 0;
+            tasks[i].wait_idx = current_task;
+            tasks[current_task].state = TASK_BLOCKED;
+            return 0;
+        }
+    }
+    return -1;
 }

@@ -114,8 +114,10 @@ registers_t *isr_handler(registers_t *r) {
     if (n == 0x80) {
         r->rax = syscall_handler(r->rax, r->rdi, r->rsi, r->rdx, r->rcx);
         if (num_tasks > 1) {
-            save_frame(r);
-            tasks[current_task].state = TASK_READY;
+            if (tasks[current_task].state == TASK_READY || tasks[current_task].state == TASK_RUNNING) {
+                save_frame(r);
+                tasks[current_task].state = TASK_READY;
+            }
             int next = schedule_next();
             tasks[next].state = TASK_RUNNING;
             current_task = next;

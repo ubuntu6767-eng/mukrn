@@ -31,11 +31,23 @@ typedef struct {
     u64 stack_phys;
     u64 user_stack_phys;
     u64 pml4_phys;
+    u64 load_addr;
+    u64 code_pages;
+    int wait_idx;
     ipc_msg_t ipc_queue[IPC_QUEUE_SIZE];
     u32 ipc_head;
     u32 ipc_tail;
     u32 ipc_count;
 } task_t;
+
+#define EMBED_COUNT 3
+typedef struct {
+    unsigned char *start;
+    unsigned char *end;
+    u64 load_addr;
+} embed_prog_t;
+
+extern embed_prog_t embedded[];
 
 extern task_t tasks[MAX_TASKS];
 extern int current_task;
@@ -48,5 +60,8 @@ void ipc_init_task(task_t *t);
 u64 sys_getpid(void);
 int sys_send(u64 target_pid, u64 type, const u8 *data, u64 len);
 int sys_recv(ipc_msg_t *msg);
+int sys_spawn(u64 idx);
+void sys_exit(void);
+int sys_wait(u64 pid);
 
 #endif
