@@ -12,8 +12,10 @@
 #define SYSCALL_RECV    6
 #define SYSCALL_INB     7
 #define SYSCALL_OUTB    8
-#define SYSCALL_SPAWN   9
-#define SYSCALL_WAIT   10
+#define SYSCALL_SPAWN     9
+#define SYSCALL_WAIT     10
+#define SYSCALL_WAIT_ANY 11
+#define SYSCALL_GETSTATE 12
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4);
 

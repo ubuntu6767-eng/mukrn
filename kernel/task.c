@@ -4,6 +4,8 @@
 #include "serial.h"
 #include "idt.h"
 
+extern unsigned char _binary_init_bin_start[];
+extern unsigned char _binary_init_bin_end[];
 extern unsigned char _binary_keyboard_driver_bin_start[];
 extern unsigned char _binary_keyboard_driver_bin_end[];
 extern unsigned char _binary_command_bin_start[];
@@ -12,9 +14,10 @@ extern unsigned char _binary_shell_bin_start[];
 extern unsigned char _binary_shell_bin_end[];
 
 embed_prog_t embedded[EMBED_COUNT] = {
-    { _binary_keyboard_driver_bin_start, _binary_keyboard_driver_bin_end, 0x400000 },
-    { _binary_command_bin_start,         _binary_command_bin_end,         0x500000 },
-    { _binary_shell_bin_start,           _binary_shell_bin_end,           0x600000 },
+    { _binary_init_bin_start,             _binary_init_bin_end,             0x400000, 1 },
+    { _binary_keyboard_driver_bin_start, _binary_keyboard_driver_bin_end, 0x500000, 2 },
+    { _binary_command_bin_start,         _binary_command_bin_end,         0x600000, 3 },
+    { _binary_shell_bin_start,           _binary_shell_bin_end,           0x700000, 4 },
 };
 
 task_t tasks[MAX_TASKS];
@@ -36,38 +39,43 @@ void ipc_init_task(task_t *t)
     t->ipc_count = 0;
 }
 
-void create_process(void *binary, u64 size, u64 load_addr)
+int task_create(void *binary, u64 size, u64 load_addr, u64 want_pid)
 {
-    if (num_tasks >= MAX_TASKS) return;
+    if (num_tasks >= MAX_TASKS) return -1;
 
     u64 code_pages = (size + 4095) / 4096;
     if (code_pages > 16) {
         puts("[kernel] Process too large\r\n");
-        return;
+        return -1;
     }
 
     void *kstack = pmm_alloc_page();
     if (!kstack) {
         puts("[kernel] No memory for process\r\n");
-        return;
+        return -1;
+    }
+
+    if (want_pid > 0) {
+        for (int i = 0; i < num_tasks; i++)
+            if (tasks[i].pid == want_pid && tasks[i].state != TASK_EXITED) return -1;
     }
 
     u64 new_pml4 = paging_clone_kernel();
-    if (!new_pml4) return;
+    if (!new_pml4) return -1;
 
     u64 old_root = paging_root;
     paging_switch(new_pml4);
 
     for (u64 i = 0; i < code_pages; i++) {
         void *cp = pmm_alloc_page();
-        if (!cp) return;
+        if (!cp) return -1;
         u64 virt = load_addr + i * 4096;
         map_page(virt, (u64)cp, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
     }
 
     for (int i = 0; i < 4; i++) {
         void *sp = pmm_alloc_page();
-        if (!sp) return;
+        if (!sp) return -1;
         u64 v = load_addr + 0x100000 - (i + 1) * 4096;
         map_page(v, (u64)sp, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
     }
@@ -91,7 +99,7 @@ void create_process(void *binary, u64 size, u64 load_addr)
 
     task_t *t = &tasks[num_tasks];
     t->rsp = (u64)kstack;
-    t->pid = next_pid++;
+    t->pid = want_pid > 0 ? want_pid : next_pid++;
     t->state = TASK_READY;
     t->stack_phys = (u64)kstack;
     t->user_stack_phys = 0;
@@ -105,6 +113,13 @@ void create_process(void *binary, u64 size, u64 load_addr)
     puts("[kernel] Process #");
     puthex(t->pid);
     puts(" created\r\n");
+
+    return t->pid;
+}
+
+void create_process(void *binary, u64 size, u64 load_addr)
+{
+    task_create(binary, size, load_addr, 0);
 }
 
 void scheduler_start(void)
@@ -197,10 +212,7 @@ int sys_spawn(u64 idx)
     embed_prog_t *p = &embedded[idx];
     u64 size = (u64)p->end - (u64)p->start;
     if (size == 0) return -1;
-    int prev = num_tasks;
-    create_process((void*)p->start, size, p->load_addr);
-    if (num_tasks == prev) return -1;
-    return tasks[prev].pid;
+    return task_create((void*)p->start, size, p->load_addr, p->fixed_pid);
 }
 
 void sys_exit(void)
@@ -228,5 +240,26 @@ int sys_wait(u64 pid)
             return 0;
         }
     }
+    return -1;
+}
+
+int sys_wait_any(void)
+{
+    for (int i = 0; i < num_tasks; i++) {
+        if (tasks[i].state == TASK_EXITED && i != current_task)
+            return tasks[i].pid;
+    }
+    for (int i = 0; i < num_tasks; i++) {
+        if (tasks[i].state != TASK_EXITED && i != current_task)
+            tasks[i].wait_idx = current_task;
+    }
+    tasks[current_task].state = TASK_BLOCKED;
+    return 0;
+}
+
+int sys_getstate(u64 pid)
+{
+    for (int i = 0; i < num_tasks; i++)
+        if (tasks[i].pid == pid) return tasks[i].state;
     return -1;
 }

@@ -14,6 +14,7 @@ static void puts(const char *s);
 static int recv(ipc_msg_t *msg);
 static int send(u64 pid, u64 type, const u8 *data, u64 len);
 static u8 inb(u16 port);
+static void sys_exit(void);
 
 #define CMD_PID 3
 
@@ -57,7 +58,7 @@ void _start(void)
 
         if (resp.type == 3) {
             puts((const char*)resp.data);
-            for (;;) __asm__ volatile("cli; hlt");
+            sys_exit();
         }
 
         puts((const char*)resp.data);
@@ -89,6 +90,10 @@ static int send(u64 pid, u64 type, const u8 *data, u64 len) {
     __asm__ volatile("int $0x80" : "=a"(r)
         : "a"(5), "D"(pid), "S"(type), "d"((long)data), "c"(len));
     return r;
+}
+
+static void sys_exit(void) {
+    __asm__ volatile("int $0x80" : : "a"(3));
 }
 
 static char getchar(void)

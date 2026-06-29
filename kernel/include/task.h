@@ -40,11 +40,12 @@ typedef struct {
     u32 ipc_count;
 } task_t;
 
-#define EMBED_COUNT 3
+#define EMBED_COUNT 4
 typedef struct {
     unsigned char *start;
     unsigned char *end;
     u64 load_addr;
+    u64 fixed_pid;
 } embed_prog_t;
 
 extern embed_prog_t embedded[];
@@ -55,6 +56,7 @@ extern int num_tasks;
 
 void task_init(void);
 void create_process(void *binary, u64 size, u64 load_addr);
+int task_create(void *binary, u64 size, u64 load_addr, u64 want_pid);
 void scheduler_start(void);
 void ipc_init_task(task_t *t);
 u64 sys_getpid(void);
@@ -63,5 +65,7 @@ int sys_recv(ipc_msg_t *msg);
 int sys_spawn(u64 idx);
 void sys_exit(void);
 int sys_wait(u64 pid);
+int sys_wait_any(void);
+int sys_getstate(u64 pid);
 
 #endif

@@ -13,6 +13,7 @@ static void putc(char c);
 static void puts(const char *s);
 static int recv(ipc_msg_t *msg);
 static int send(u64 pid, u64 type, const u8 *data, u64 len);
+static void sys_exit(void);
 
 void _start(void)
 {
@@ -35,7 +36,7 @@ void _start(void)
         } else if (c == 'e') {
             const char *resp = "Bye!\r\n";
             send(shell, 3, (const u8*)resp, 6);
-            for (;;) __asm__ volatile("cli; hlt");
+            sys_exit();
         } else {
             const char *resp = "Unknown\r\n";
             send(shell, 2, (const u8*)resp, 9);
@@ -62,4 +63,8 @@ static int send(u64 pid, u64 type, const u8 *data, u64 len) {
     __asm__ volatile("int $0x80" : "=a"(r)
         : "a"(5), "D"(pid), "S"(type), "d"((long)data), "c"(len));
     return r;
+}
+
+static void sys_exit(void) {
+    __asm__ volatile("int $0x80" : : "a"(3));
 }
