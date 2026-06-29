@@ -41,9 +41,14 @@ void keyboard_isr(u8 scancode)
     }
 }
 
+int kb_available(void)
+{
+    return kb_head != kb_tail;
+}
+
 char kb_read(void)
 {
-    while (kb_head == kb_tail)
+    while (!kb_available())
         __asm__ volatile("pause");
     char c = kb_buf[kb_tail];
     kb_tail = (kb_tail + 1) % KB_BUF_SIZE;

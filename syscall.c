@@ -3,6 +3,17 @@
 #include "keyboard.h"
 #include "task.h"
 
+static char read_char(void)
+{
+    while (1) {
+        if (kb_available())
+            return kb_read();
+        if (inb(0x3FD) & 1)
+            return inb(0x3F8);
+        __asm__ volatile("pause");
+    }
+}
+
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3)
 {
     switch (n) {
@@ -16,7 +27,7 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3)
         char *buf = (char*)arg1;
         u64 max = arg2;
         for (u64 i = 0; i < max; i++) {
-            char c = kb_read();
+            char c = read_char();
             buf[i] = c;
             if (c == '\r' || c == '\n') {
                 putc('\r');

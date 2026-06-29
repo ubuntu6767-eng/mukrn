@@ -26,24 +26,24 @@ void create_process(void *binary, u64 size)
     }
 
     void *kstack = pmm_alloc_page();
-    void *ustack = pmm_alloc_page();
-    if (!kstack || !ustack) {
+    if (!kstack) {
         puts("[kernel] No memory for process\r\n");
         return;
     }
 
     for (u64 i = 0; i < code_pages; i++) {
         void *cp = pmm_alloc_page();
-        if (!cp) {
-            puts("[kernel] No code page\r\n");
-            return;
-        }
+        if (!cp) return;
         u64 virt = USER_CODE_ADDR + i * 4096;
         map_page(virt, (u64)cp, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
     }
 
-    map_page(USER_STACK_TOP - 4096, (u64)ustack,
-             PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+    for (int i = 0; i < 4; i++) {
+        void *sp = pmm_alloc_page();
+        if (!sp) return;
+        u64 v = USER_STACK_TOP - (i + 1) * 4096;
+        map_page(v, (u64)sp, PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+    }
 
     u8 *src = (u8*)binary;
     for (u64 i = 0; i < size; i++)
@@ -64,7 +64,7 @@ void create_process(void *binary, u64 size)
     t->pid = next_pid++;
     t->state = TASK_READY;
     t->stack_phys = (u64)kstack;
-    t->user_stack_phys = (u64)ustack;
+    t->user_stack_phys = 0;
     num_tasks++;
 
     puts("[kernel] Process #");

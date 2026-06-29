@@ -1,21 +1,7 @@
-static void putc(char c) {
-    __asm__ volatile("int $0x80" : : "a"(0), "D"(c));
-}
-
-static void puts(const char *s) {
-    __asm__ volatile("int $0x80" : : "a"(1), "D"(s));
-}
-
-static int read(char *buf, int max) {
-    int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(2), "D"(buf), "S"((long)max));
-    return ret;
-}
-
-static void exit(void) {
-    __asm__ volatile("int $0x80" : : "a"(3));
-    for (;;);
-}
+static void putc(char c);
+static void puts(const char *s);
+static int read(char *buf, int max);
+static void exit(void);
 
 void _start(void)
 {
@@ -39,20 +25,34 @@ void _start(void)
 
         if (buf[0] == 0) continue;
 
-        if (buf[0] == 'h') {
-            puts("Commands:\r\n");
-            puts("  help   - this\r\n");
-            puts("  clear  - clear screen\r\n");
-            puts("  exit   - halt\r\n");
-        } else if (buf[0] == 'c') {
+        if (buf[0] == 'c') {
             puts("\x1b[2J\x1b[H");
+        } else if (buf[0] == 'h') {
+            puts("Commands:\r\n  help\r\n  clear\r\n  exit\r\n");
         } else if (buf[0] == 'e') {
             puts("Bye!\r\n");
             exit();
         } else {
-            puts("Unknown: ");
-            puts(buf);
-            puts("\r\n");
+            puts("Unknown\r\n");
         }
     }
+}
+
+static void putc(char c) {
+    __asm__ volatile("int $0x80" : : "a"(0), "D"(c));
+}
+
+static void puts(const char *s) {
+    __asm__ volatile("int $0x80" : : "a"(1), "D"(s));
+}
+
+static int read(char *buf, int max) {
+    int r;
+    __asm__ volatile("int $0x80" : "=a"(r) : "a"(2), "D"(buf), "S"((long)max));
+    return r;
+}
+
+static void exit(void) {
+    __asm__ volatile("int $0x80" : : "a"(3));
+    for (;;);
 }
