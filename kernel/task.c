@@ -15,6 +15,8 @@ extern unsigned char _binary_shell_elf_start[];
 extern unsigned char _binary_shell_elf_end[];
 extern unsigned char _binary_serial_elf_start[];
 extern unsigned char _binary_serial_elf_end[];
+extern unsigned char _binary_disk_elf_start[];
+extern unsigned char _binary_disk_elf_end[];
 
 embed_prog_t embedded[EMBED_COUNT] = {
     { _binary_init_elf_start,             _binary_init_elf_end,             0x400000, 1 },
@@ -22,6 +24,7 @@ embed_prog_t embedded[EMBED_COUNT] = {
     { _binary_command_elf_start,         _binary_command_elf_end,         0x600000, 3 },
     { _binary_shell_elf_start,           _binary_shell_elf_end,           0x700000, 4 },
     { _binary_serial_elf_start,          _binary_serial_elf_end,           0x800000, 5 },
+    { _binary_disk_elf_start,            _binary_disk_elf_end,             0x900000, 6 },
 };
 
 task_t tasks[MAX_TASKS];

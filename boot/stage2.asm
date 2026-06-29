@@ -85,16 +85,39 @@ start:
     mov [head], dx
 
     mov dl, [boot_drive]
-    mov bx, 0x0000
+    xor bx, bx
     mov ax, 0x1000
     mov es, ax
+    mov si, KERNEL_SECTORS
+    mov di, KERNEL_LBA
+
+.load_loop:
+    mov ax, di
+    xor dx, dx
+    div word [sectors]
+    inc dx
+    mov cl, dl
+    xor dx, dx
+    div word [heads]
+    mov dh, dl
+    mov ch, al
+
+    mov dl, [boot_drive]
     mov ah, 0x02
-    mov al, KERNEL_SECTORS
-    mov ch, byte [cyl]
-    mov cl, byte [sec]
-    mov dh, byte [head]
+    mov al, 1
     int 0x13
     jc disk_error
+
+    dec si
+    jz .loaded
+    inc di
+
+    mov ax, es
+    add ax, 32
+    mov es, ax
+    xor bx, bx
+    jmp .load_loop
+.loaded:
     mov si, msg_kernel
     call serial_puts
 

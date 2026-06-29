@@ -40,7 +40,7 @@ typedef struct {
     u32 ipc_count;
 } task_t;
 
-#define EMBED_COUNT 5
+#define EMBED_COUNT 6
 typedef struct {
     unsigned char *start;
     unsigned char *end;
