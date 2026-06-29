@@ -12,7 +12,10 @@ typedef struct {
 static void putc(char c);
 static void puts(const char *s);
 static int recv(ipc_msg_t *msg);
+static int send(u64 pid, u64 type, const u8 *data, u64 len);
 static u8 inb(u16 port);
+
+#define CMD_PID 3
 
 static char getchar(void);
 
@@ -43,16 +46,21 @@ void _start(void)
 
         if (buf[0] == 0) continue;
 
-        if (buf[0] == 'h') {
-            puts("Commands:\r\n  help\r\n  clear\r\n  exit\r\n");
-        } else if (buf[0] == 'c') {
-            puts("\x1b[2J\x1b[H");
-        } else if (buf[0] == 'e') {
-            puts("Bye!\r\n");
+        send(CMD_PID, 1, (const u8*)buf, len);
+
+        ipc_msg_t resp;
+        int r;
+        do {
+            __asm__ volatile("pause");
+            r = recv(&resp);
+        } while (r != 0 || resp.sender_pid != CMD_PID);
+
+        if (resp.type == 3) {
+            puts((const char*)resp.data);
             for (;;) __asm__ volatile("cli; hlt");
-        } else {
-            puts("Unknown\r\n");
         }
+
+        puts((const char*)resp.data);
     }
 }
 
@@ -76,17 +84,22 @@ static int recv(ipc_msg_t *msg) {
     return r;
 }
 
+static int send(u64 pid, u64 type, const u8 *data, u64 len) {
+    int r;
+    __asm__ volatile("int $0x80" : "=a"(r)
+        : "a"(5), "D"(pid), "S"(type), "d"((long)data), "c"(len));
+    return r;
+}
+
 static char getchar(void)
 {
     for (;;) {
         ipc_msg_t msg;
         int r = recv(&msg);
-        if (r == 0 && msg.type == 1) {
+        if (r == 0 && msg.type == 0)
             return msg.data[0];
-        }
-        if (inb(0x3FD) & 1) {
+        if (inb(0x3FD) & 1)
             return inb(0x3F8);
-        }
         __asm__ volatile("pause");
     }
 }

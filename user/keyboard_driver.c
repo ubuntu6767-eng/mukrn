@@ -22,7 +22,7 @@ void _start(void)
                 char c = map[sc];
                 if (c) {
                     u8 buf[1] = { (u8)c };
-                    send(2, 1, buf, 1);
+                    send(2, 0, buf, 1);
                 }
             }
         }

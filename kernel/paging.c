@@ -83,7 +83,7 @@ void map_page(u64 virt, u64 phys, u64 flags)
         pdt[pdt_i] = (u64)page | 7;
         pde = pdt[pdt_i];
     } else if (pde & PAGE_PS) {
-        puts("split "); puthex(virt); puts("->"); puthex(phys);
+        puts("[kernel] split "); puthex(virt); puts("->"); puthex(phys);
         puts(" cr3="); puthex(paging_root);
         void *page = pmm_alloc_page();
         if (!page) { puts(" OOM\n"); return; }

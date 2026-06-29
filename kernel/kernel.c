@@ -9,6 +9,8 @@
 
 extern unsigned char _binary_shell_bin_start[];
 extern unsigned char _binary_shell_bin_end[];
+extern unsigned char _binary_command_bin_start[];
+extern unsigned char _binary_command_bin_end[];
 extern unsigned char _binary_keyboard_driver_bin_start[];
 extern unsigned char _binary_keyboard_driver_bin_end[];
 
@@ -43,7 +45,7 @@ void __attribute__((section(".entry"))) kmain(void)
     puthex(kbd_size);
     puts(" bytes\r\n");
     create_process(_binary_keyboard_driver_bin_start, kbd_size, 0x400000);
-    puts(" kbd0.pml4="); puthex(tasks[0].pml4_phys);
+    puts("[kernel] kbd0.pml4="); puthex(tasks[0].pml4_phys);
     puts(" kbd0.pid="); puthex(tasks[0].pid); putc('\n');
 
     u64 shell_size = (u64)_binary_shell_bin_end - (u64)_binary_shell_bin_start;
@@ -51,8 +53,16 @@ void __attribute__((section(".entry"))) kmain(void)
     puthex(shell_size);
     puts(" bytes\r\n");
     create_process(_binary_shell_bin_start, shell_size, 0x600000);
-    puts(" sh1.pml4="); puthex(tasks[1].pml4_phys);
+    puts("[kernel] sh1.pml4="); puthex(tasks[1].pml4_phys);
     puts(" sh1.pid="); puthex(tasks[1].pid); putc('\n');
+
+    u64 cmd_size = (u64)_binary_command_bin_end - (u64)_binary_command_bin_start;
+    puts("[kernel] Command size: ");
+    puthex(cmd_size);
+    puts(" bytes\r\n");
+    create_process(_binary_command_bin_start, cmd_size, 0x500000);
+    puts("[kernel] cmd0.pml4="); puthex(tasks[2].pml4_phys);
+    puts(" cmd0.pid="); puthex(tasks[2].pid); putc('\n');
 
     puts("[kernel] Starting scheduler...\r\n");
     scheduler_start();
