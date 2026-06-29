@@ -2,7 +2,7 @@
 set -e
 
 echo "=== Building C kernel (x86-64) ==="
-for SRC in kernel.c idt.c serial.c pmm.c paging.c; do
+for SRC in kernel.c idt.c serial.c pmm.c paging.c task.c gdt.c keyboard.c syscall.c; do
     gcc -m64 -ffreestanding -nostdlib -nostartfiles \
         -fno-PIE -fno-asynchronous-unwind-tables -fno-stack-protector \
         -fno-toplevel-reorder -mno-red-zone -mgeneral-regs-only \
@@ -12,8 +12,22 @@ done
 echo "=== Assembling ISR stubs ==="
 nasm -f elf64 -o isr_stubs.o isr_stubs.asm
 
+echo "=== Building shell (user-space) ==="
+gcc -m64 -ffreestanding -nostdlib -nostartfiles \
+    -fno-PIE -fno-asynchronous-unwind-tables -fno-stack-protector \
+    -mno-red-zone -mgeneral-regs-only \
+    -c shell.c -o shell_user.o
+ld -m elf_x86_64 -Ttext=0x400000 --oformat binary -o shell.bin shell_user.o
+
+echo "=== Embedding shell into kernel ==="
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    shell.bin shell_embed.o
+
 ld -m elf_x86_64 -T linker.ld --oformat binary -o kernel.bin \
-    kernel.o idt.o serial.o pmm.o paging.o isr_stubs.o
+    kernel.o idt.o serial.o pmm.o paging.o \
+    task.o gdt.o keyboard.o syscall.o \
+    isr_stubs.o shell_embed.o
 
 KERNEL_SIZE=$(stat -c%s kernel.bin)
 KERNEL_SECTORS=$(( (KERNEL_SIZE + 511) / 512 ))

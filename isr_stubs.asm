@@ -75,6 +75,7 @@ isr_common:
 
     mov rdi, rsp
     call isr_handler
+    mov rsp, rax
 
     pop r15
     pop r14

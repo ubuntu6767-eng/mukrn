@@ -4,6 +4,10 @@ bits 16
 CODE32_SEG equ 0x08
 DATA_SEG   equ 0x10
 CODE64_SEG equ 0x18
+USER_DATA  equ 0x20
+USER_CODE  equ 0x28
+TSS_SEG    equ 0x30
+
 KERNEL_ADDR equ 0x100000
 
 start:
@@ -34,7 +38,6 @@ start:
     mov si, msg_a20
     call serial_puts
 
-    ; ---- E820 Memory Map ----
     push es
     push ds
     pop es
@@ -224,11 +227,10 @@ setup_paging:
     rep stosd
     mov ecx, 1024
     rep stosd
-    mov dword [0x1000], 0x2003
+    mov dword [0x1000], 0x2007
     mov dword [0x1004], 0
-    mov dword [0x2000], 0x3003
+    mov dword [0x2000], 0x3007
     mov dword [0x2004], 0
-    ; Fill 512 PDEs (2MB pages) — identity map 0–1GB
     mov edi, 0x3000
     mov eax, 0x000083
     mov ecx, 512
@@ -265,14 +267,13 @@ sec:     dw 0
 
 align 16
 gdt:
-    dq 0                         ; 0x00 null
-    dq 0x00CF9A000000FFFF        ; 0x08 ring0 code32
-    dq 0x00CF92000000FFFF        ; 0x10 ring0 data
-    dq 0x00AF9A0000000000        ; 0x18 ring0 code64
-    dq 0x00CF92F8000000FFFF      ; 0x20 ring3 data32
-    dq 0x00CFFA000000FFFF        ; 0x28 ring3 code32
-    dq 0x00AFF20000000000        ; 0x30 ring3 data64  (should be readable)
-    dq 0x00AFFA0000000000        ; 0x38 ring3 code64
+    dq 0                          ; 0x00 null
+    dq 0x00CF9A000000FFFF         ; 0x08 ring0 code32
+    dq 0x00CF92000000FFFF         ; 0x10 ring0 data
+    dq 0x00AF9A0000000000         ; 0x18 ring0 code64
+    dq 0x00CFF2000000FFFF         ; 0x20 ring3 data
+    dq 0x00AFFA0000000000         ; 0x28 ring3 code64
+    dq 0, 0                       ; 0x30 TSS (set up by kernel)
 gdt_end:
 
 gdtr:

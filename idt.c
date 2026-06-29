@@ -1,13 +1,20 @@
 #include "idt.h"
 #include "serial.h"
+#include "keyboard.h"
+#include "task.h"
+#include "syscall.h"
 
 static idt_entry_t idt[IDT_SIZE] = {0};
 static idtr_t idtr;
+volatile u64 ticks = 0;
+extern int num_tasks;
+extern int current_task;
+extern task_t tasks[];
 
 static void idt_set_entry(int n, void *handler, u8 flags) {
     u64 addr = (u64)handler;
     idt[n].offset_0 = addr & 0xFFFF;
-    idt[n].selector = CODE64_SEG;
+    idt[n].selector = 0x18;
     idt[n].ist = 0;
     idt[n].flags = flags;
     idt[n].offset_1 = (addr >> 16) & 0xFFFF;
@@ -15,27 +22,43 @@ static void idt_set_entry(int n, void *handler, u8 flags) {
     idt[n].reserved = 0;
 }
 
-volatile u64 ticks = 0;
+static int schedule_next(void) {
+    if (num_tasks <= 1) return current_task;
+    for (int i = 1; i < num_tasks; i++) {
+        int n = (current_task + i) % num_tasks;
+        if (tasks[n].state == TASK_READY) {
+            tasks[n].state = TASK_RUNNING;
+            return n;
+        }
+    }
+    return current_task;
+}
 
-void isr_handler(registers_t *r) {
+static registers_t *schedule(registers_t *r) {
+    if (current_task >= 0)
+        tasks[current_task].rsp = (u64)r;
+    tasks[current_task].state = TASK_READY;
+    int next = schedule_next();
+    tasks[next].state = TASK_RUNNING;
+    current_task = next;
+    return (registers_t*)tasks[current_task].rsp;
+}
+
+registers_t *isr_handler(registers_t *r) {
     u64 n = r->int_no;
 
     if (n <= 31) {
+        puts("\r\n[PANIC] Exception ");
+        puthex(n);
+        puts(" err: ");
+        puthex(r->err_code);
         if (n == 14) {
             u64 cr2;
             __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-            puts("\r\n[PANIC] Page fault at 0x");
+            puts(" CR2: ");
             puthex(cr2);
-            puts(" (err: ");
-            puthex(r->err_code);
-            puts(")\r\n");
-        } else {
-            puts("\r\n[PANIC] Exception ");
-            puthex(n);
-            puts(" (err: ");
-            puthex(r->err_code);
-            puts(")\r\n");
         }
+        puts("\r\n");
         __asm__ volatile("cli; hlt");
         for (;;);
     }
@@ -43,13 +66,34 @@ void isr_handler(registers_t *r) {
     if (n >= 32 && n <= 47) {
         if (n >= 40) outb(PIC2_COMMAND, PIC_EOI);
         outb(PIC1_COMMAND, PIC_EOI);
-        if (n == 32) ticks++;
+
+        if (n == 33) {
+            u8 sc = inb(0x60);
+            keyboard_isr(sc);
+        }
+
+        if (n == 32) {
+            ticks++;
+            if (num_tasks > 1 && (r->cs & 3))
+                return schedule(r);
+        }
+        return r;
     }
+
+    if (n == 0x80) {
+        r->rax = syscall_handler(r->rax, r->rdi, r->rsi, r->rdx);
+        return r;
+    }
+
+    return r;
 }
 
 void idt_init(void) {
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (u64)&idt;
+
+    for (int i = 0; i < 48; i++)
+        idt_set_entry(i, 0, 0x8E);
 
     idt_set_entry(0,  isr0,  0x8E);
     idt_set_entry(1,  isr1,  0x8E);
@@ -99,6 +143,7 @@ void idt_init(void) {
     idt_set_entry(45, isr45, 0x8E);
     idt_set_entry(46, isr46, 0x8E);
     idt_set_entry(47, isr47, 0x8E);
+    idt_set_entry(0x80, isr128, 0xEF);
 
     __asm__ volatile("lidt %0" : : "m"(idtr));
 }
@@ -108,22 +153,18 @@ void pic_remap(void) {
     io_wait();
     outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
     io_wait();
-
     outb(PIC1_DATA, 0x20);
     io_wait();
     outb(PIC2_DATA, 0x28);
     io_wait();
-
     outb(PIC1_DATA, 0x04);
     io_wait();
     outb(PIC2_DATA, 0x02);
     io_wait();
-
     outb(PIC1_DATA, ICW4_8086);
     io_wait();
     outb(PIC2_DATA, ICW4_8086);
     io_wait();
-
     outb(PIC1_DATA, 0xFC);
     outb(PIC2_DATA, 0xFF);
 }

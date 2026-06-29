@@ -50,18 +50,19 @@ void map_page(u64 virt, u64 phys, u64 flags)
             u64 *pt = (u64*)page;
             for (int i = 0; i < 512; i++)
                 pt[i] = (base + i * 0x1000) | (pde & 0x1FF);
-            pdt[pdt_i] = (u64)page | 3;
-            pde = pdt[pdt_i];
-        }
-    } else {
-        void *page = pmm_alloc_page();
-        if (!page) return;
-        pdt[pdt_i] = (u64)page | 3;
+        pdt[pdt_i] = (u64)page | 7;
+        pde = pdt[pdt_i];
+    }
+} else {
+    void *page = pmm_alloc_page();
+    if (!page) return;
+    pdt[pdt_i] = (u64)page | 7;
         pde = pdt[pdt_i];
     }
     u64 *pt = (u64*)(pde & ~0xFFF);
 
     pt[pt_i] = phys | flags;
+    __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
 void unmap_page(u64 virt)
