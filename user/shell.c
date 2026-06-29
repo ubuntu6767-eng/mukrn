@@ -11,12 +11,13 @@ typedef struct {
 
 static void putc(char c);
 static void puts(const char *s);
+static void puthex(u64 v);
 static int recv(ipc_msg_t *msg);
 static int send(u64 pid, u64 type, const u8 *data, u64 len);
-static u8 inb(u16 port);
 static void sys_exit(void);
 
 #define CMD_PID 3
+#define SERIAL_PID 5
 
 static char getchar(void);
 
@@ -68,34 +69,48 @@ void _start(void)
 }
 
 static void putc(char c) {
-    __asm__ volatile("int $0x80" : : "a"(0), "D"(c));
+    u8 buf[64] = {c};
+    send(SERIAL_PID, 0, buf, 1);
 }
 
 static void puts(const char *s) {
-    __asm__ volatile("int $0x80" : : "a"(1), "D"(s));
+    while (*s) {
+        u8 buf[64];
+        int i;
+        for (i = 0; i < 63 && s[i]; i++)
+            buf[i] = s[i];
+        buf[i] = 0;
+        send(SERIAL_PID, 1, buf, i + 1);
+        s += i;
+    }
 }
 
-static u8 inb(u16 port) {
-    u8 r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(7), "D"(port));
-    return r;
+static void puthex(u64 v) {
+    char buf[17];
+    for (int i = 15; i >= 0; i--) {
+        int n = v & 0xF;
+        buf[i] = n < 10 ? '0' + n : 'a' + n - 10;
+        v >>= 4;
+    }
+    buf[16] = 0;
+    puts(buf);
 }
 
 static int recv(ipc_msg_t *msg) {
     int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(6), "D"(msg));
+    __asm__ volatile("int $0x80" : "=a"(r) : "a"(3), "D"(msg));
     return r;
 }
 
 static int send(u64 pid, u64 type, const u8 *data, u64 len) {
     int r;
     __asm__ volatile("int $0x80" : "=a"(r)
-        : "a"(5), "D"(pid), "S"(type), "d"((long)data), "c"(len));
+        : "a"(2), "D"(pid), "S"(type), "d"((long)data), "c"(len));
     return r;
 }
 
 static void sys_exit(void) {
-    __asm__ volatile("int $0x80" : : "a"(3));
+    __asm__ volatile("int $0x80" : : "a"(0));
 }
 
 static char getchar(void)
@@ -103,10 +118,8 @@ static char getchar(void)
     for (;;) {
         ipc_msg_t msg;
         int r = recv(&msg);
-        if (r == 0 && msg.type == 0)
+        if (r == 0)
             return msg.data[0];
-        if (inb(0x3FD) & 1)
-            return inb(0x3F8);
         __asm__ volatile("pause");
     }
 }

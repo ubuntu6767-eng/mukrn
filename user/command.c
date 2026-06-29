@@ -9,8 +9,6 @@ typedef struct {
     u64 length;
 } ipc_msg_t;
 
-static void putc(char c);
-static void puts(const char *s);
 static int recv(ipc_msg_t *msg);
 static int send(u64 pid, u64 type, const u8 *data, u64 len);
 static void sys_exit(void);
@@ -44,27 +42,19 @@ void _start(void)
     }
 }
 
-static void putc(char c) {
-    __asm__ volatile("int $0x80" : : "a"(0), "D"(c));
-}
-
-static void puts(const char *s) {
-    __asm__ volatile("int $0x80" : : "a"(1), "D"(s));
-}
-
 static int recv(ipc_msg_t *msg) {
     int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(6), "D"(msg));
+    __asm__ volatile("int $0x80" : "=a"(r) : "a"(3), "D"(msg));
     return r;
 }
 
 static int send(u64 pid, u64 type, const u8 *data, u64 len) {
     int r;
     __asm__ volatile("int $0x80" : "=a"(r)
-        : "a"(5), "D"(pid), "S"(type), "d"((long)data), "c"(len));
+        : "a"(2), "D"(pid), "S"(type), "d"((long)data), "c"(len));
     return r;
 }
 
 static void sys_exit(void) {
-    __asm__ volatile("int $0x80" : : "a"(3));
+    __asm__ volatile("int $0x80" : : "a"(0));
 }

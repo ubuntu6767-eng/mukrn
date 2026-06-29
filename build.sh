@@ -32,6 +32,10 @@ echo "=== User-space shell ==="
 gcc $CFLAGS -c user/shell.c -o build/shell_user.o
 ld -m elf_x86_64 -Ttext=0x700000 -o build/shell.elf build/shell_user.o
 
+echo "=== User-space serial driver ==="
+gcc $CFLAGS -c user/serial.c -o build/serial_user.o
+ld -m elf_x86_64 -Ttext=0x800000 -o build/serial.elf build/serial_user.o
+
 echo "=== Embedding binaries ==="
 cd build
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
@@ -46,12 +50,15 @@ objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     shell.elf shell_embed.o
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    serial.elf serial_embed.o
 cd - > /dev/null
 
 ld -m elf_x86_64 -T linker.ld --oformat binary -o build/kernel.bin \
     build/kernel.o build/idt.o build/serial.o build/pmm.o build/paging.o \
     build/task.o build/gdt.o build/syscall.o \
-    build/isr_stubs.o build/init_embed.o build/kbd_embed.o build/cmd_embed.o build/shell_embed.o
+    build/isr_stubs.o build/init_embed.o build/kbd_embed.o build/cmd_embed.o build/shell_embed.o build/serial_embed.o
 
 KERNEL_SIZE=$(stat -c%s build/kernel.bin)
 KERNEL_SECTORS=$(( (KERNEL_SIZE + 511) / 512 ))
