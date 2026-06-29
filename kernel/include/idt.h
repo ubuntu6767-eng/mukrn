@@ -32,6 +32,7 @@ void idt_init(void);
 void pic_remap(void);
 void pit_init(u32 frequency);
 registers_t *isr_handler(registers_t *r);
+int sys_irq_register(u64 irq);
 
 extern void isr0(void);  extern void isr1(void);  extern void isr2(void);
 extern void isr3(void);  extern void isr4(void);  extern void isr5(void);

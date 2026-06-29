@@ -10,6 +10,7 @@ volatile u64 ticks = 0;
 extern int num_tasks;
 extern int current_task;
 extern task_t tasks[];
+static int irq_handlers[16];
 
 static void idt_set_entry(int n, void *handler, u8 flags) {
     u64 addr = (u64)handler;
@@ -108,6 +109,26 @@ registers_t *isr_handler(registers_t *r) {
             if (num_tasks > 1 && (r->cs & 3))
                 return schedule(r);
         }
+
+        if (n == 33) {
+            int idx = irq_handlers[1];
+            if (idx >= 0 && idx < MAX_TASKS && tasks[idx].state != TASK_EXITED) {
+                u8 sc = inb(0x60);
+                task_t *t = &tasks[idx];
+                if (t->ipc_count < IPC_QUEUE_SIZE) {
+                    ipc_msg_t *msg = &t->ipc_queue[t->ipc_head];
+                    msg->sender_pid = 0;
+                    msg->type = 0;
+                    msg->length = 1;
+                    msg->data[0] = sc;
+                    t->ipc_head = (t->ipc_head + 1) % IPC_QUEUE_SIZE;
+                    t->ipc_count++;
+                    if (t->state == TASK_BLOCKED)
+                        t->state = TASK_READY;
+                }
+            }
+        }
+
         return r;
     }
 
@@ -133,6 +154,9 @@ registers_t *isr_handler(registers_t *r) {
 void idt_init(void) {
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (u64)&idt;
+
+    for (int i = 0; i < 16; i++)
+        irq_handlers[i] = -1;
 
     for (int i = 0; i < 48; i++)
         idt_set_entry(i, 0, 0x8E);
@@ -216,4 +240,12 @@ void pit_init(u32 frequency) {
     outb(0x43, 0x36);
     outb(0x40, divisor & 0xFF);
     outb(0x40, (divisor >> 8) & 0xFF);
+}
+
+int sys_irq_register(u64 irq)
+{
+    if (irq >= 16) return -1;
+    if (current_task < 0) return -1;
+    irq_handlers[irq] = current_task;
+    return 0;
 }

@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "serial.h"
 #include "task.h"
+#include "idt.h"
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
 {
@@ -56,6 +57,8 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return sys_wait_any();
     case SYSCALL_GETSTATE:
         return sys_getstate(arg1);
+    case SYSCALL_IRQ_REGISTER:
+        return sys_irq_register(arg1);
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);
