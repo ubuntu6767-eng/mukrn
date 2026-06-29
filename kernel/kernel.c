@@ -7,8 +7,8 @@
 #include "task.h"
 #include "syscall.h"
 
-extern unsigned char _binary_init_bin_start[];
-extern unsigned char _binary_init_bin_end[];
+extern unsigned char _binary_init_elf_start[];
+extern unsigned char _binary_init_elf_end[];
 
 void __attribute__((section(".entry"))) kmain(void)
 {
@@ -36,11 +36,11 @@ void __attribute__((section(".entry"))) kmain(void)
     task_init();
     gdt_setup_tss();
 
-    u64 init_size = (u64)_binary_init_bin_end - (u64)_binary_init_bin_start;
+    u64 init_size = (u64)_binary_init_elf_end - (u64)_binary_init_elf_start;
     puts("[kernel] Init size: ");
     puthex(init_size);
     puts(" bytes\r\n");
-    task_create((void*)_binary_init_bin_start, init_size, 0x400000, 1);
+    task_create((void*)_binary_init_elf_start, init_size, 0x400000, 1);
     puts("[kernel] Starting scheduler...\r\n");
     scheduler_start();
 

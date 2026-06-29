@@ -59,6 +59,10 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return sys_getstate(arg1);
     case SYSCALL_IRQ_REGISTER:
         return sys_irq_register(arg1);
+    case SYSCALL_MMAP:
+        return sys_mmap(arg1, arg2, arg3);
+    case SYSCALL_MUNMAP:
+        return sys_munmap(arg1, arg2);
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);

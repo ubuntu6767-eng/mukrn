@@ -18,10 +18,10 @@ typedef struct {
 } __attribute__((packed)) ipc_msg_t;
 
 typedef enum {
-    TASK_READY = 0,
+    TASK_EXITED = 0,
+    TASK_READY,
     TASK_RUNNING,
-    TASK_BLOCKED,
-    TASK_EXITED
+    TASK_BLOCKED
 } task_state_t;
 
 typedef struct {
@@ -67,5 +67,7 @@ void sys_exit(void);
 int sys_wait(u64 pid);
 int sys_wait_any(void);
 int sys_getstate(u64 pid);
+int sys_mmap(u64 virt, u64 size, u64 flags);
+int sys_munmap(u64 virt, u64 size);
 
 #endif

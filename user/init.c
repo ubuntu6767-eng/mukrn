@@ -47,7 +47,7 @@ void _start(void)
     for (;;) {
         wait_any();
         for (int i = 0; i < n; i++) {
-            if (getstate(pids[i]) == 3) {
+            if (getstate(pids[i]) == 0) {
                 if (config[i].restart) {
                     puts("init: restart ");
                     puthex(pids[i]);

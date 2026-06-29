@@ -17,6 +17,8 @@
 #define SYSCALL_WAIT_ANY 11
 #define SYSCALL_GETSTATE     12
 #define SYSCALL_IRQ_REGISTER 13
+#define SYSCALL_MMAP        14
+#define SYSCALL_MUNMAP      15
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4);
 

@@ -18,34 +18,34 @@ nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
 echo "=== User-space init ==="
 gcc $CFLAGS -c user/init.c -o build/init_user.o
-ld -m elf_x86_64 -Ttext=0x400000 --oformat binary -o build/init.bin build/init_user.o
+ld -m elf_x86_64 -Ttext=0x400000 -o build/init.elf build/init_user.o
 
 echo "=== User-space keyboard driver ==="
 gcc $CFLAGS -c user/keyboard_driver.c -o build/kbd_user.o
-ld -m elf_x86_64 -Ttext=0x500000 --oformat binary -o build/keyboard_driver.bin build/kbd_user.o
+ld -m elf_x86_64 -Ttext=0x500000 -o build/kbd.elf build/kbd_user.o
 
 echo "=== User-space command ==="
 gcc $CFLAGS -c user/command.c -o build/command_user.o
-ld -m elf_x86_64 -Ttext=0x600000 --oformat binary -o build/command.bin build/command_user.o
+ld -m elf_x86_64 -Ttext=0x600000 -o build/command.elf build/command_user.o
 
 echo "=== User-space shell ==="
 gcc $CFLAGS -c user/shell.c -o build/shell_user.o
-ld -m elf_x86_64 -Ttext=0x700000 --oformat binary -o build/shell.bin build/shell_user.o
+ld -m elf_x86_64 -Ttext=0x700000 -o build/shell.elf build/shell_user.o
 
 echo "=== Embedding binaries ==="
 cd build
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    init.bin init_embed.o
+    init.elf init_embed.o
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    keyboard_driver.bin kbd_embed.o
+    kbd.elf kbd_embed.o
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    command.bin cmd_embed.o
+    command.elf cmd_embed.o
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    shell.bin shell_embed.o
+    shell.elf shell_embed.o
 cd - > /dev/null
 
 ld -m elf_x86_64 -T linker.ld --oformat binary -o build/kernel.bin \

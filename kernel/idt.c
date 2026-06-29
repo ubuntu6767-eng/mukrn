@@ -63,6 +63,12 @@ registers_t *isr_handler(registers_t *r) {
         puthex(n);
         puts(" err: ");
         puthex(r->err_code);
+        puts(" RIP: ");
+        puthex(r->rip);
+        puts(" RSP: ");
+        puthex(r->rsp);
+        puts(" RBP: ");
+        puthex(r->rbp);
         if (n == 14) {
             u64 cr2;
             __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));

@@ -39,7 +39,7 @@ u64 paging_clone_kernel(void)
 
     u64 *src_pdt = (u64*)(src_pdpt[0] & ~0xFFF);
     for (int i = 0; i < 512; i++)
-        dst_pdt[i] = src_pdt[i];
+        dst_pdt[i] = src_pdt[i] | PAGE_USER;
 
     return pml4;
 }

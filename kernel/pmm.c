@@ -3,12 +3,15 @@
 
 #define E820_BASE 0x4000
 
+extern u64 _end;
+
 static void *free_stack = 0;
 
 void pmm_init(void)
 {
     u32 count = *(u32*)E820_BASE;
     e820_entry_t *entries = (e820_entry_t*)(E820_BASE + 4);
+    u64 kernel_end = (u64)&_end;
 
     puts("[kernel] E820 entries: ");
     puthex(count);
@@ -30,7 +33,7 @@ void pmm_init(void)
         for (u64 addr = start; addr < end; addr += PAGE_SIZE) {
             if (addr >= 0x1000 && addr < 0x4000) continue;
             if (addr >= 0x7C00 && addr < 0x8600) continue;
-            if (addr >= 0x100000 && addr < 0x108000) continue;
+            if (addr >= 0x100000 && addr < kernel_end) continue;
 
             *(u64*)addr = (u64)free_stack;
             free_stack = (void*)addr;

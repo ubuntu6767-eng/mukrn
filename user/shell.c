@@ -58,11 +58,13 @@ void _start(void)
 
         if (resp.type == 3) {
             puts((const char*)resp.data);
-            sys_exit();
+            break;
         }
 
         puts((const char*)resp.data);
     }
+    puts("shell: goodbye\r\n");
+    for (;;) __asm__ volatile("pause");
 }
 
 static void putc(char c) {
