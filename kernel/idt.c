@@ -1,8 +1,8 @@
 #include "idt.h"
 #include "serial.h"
-#include "keyboard.h"
 #include "task.h"
 #include "syscall.h"
+#include "paging.h"
 
 static idt_entry_t idt[IDT_SIZE] = {0};
 static idtr_t idtr;
@@ -34,13 +34,23 @@ static int schedule_next(void) {
     return current_task;
 }
 
+static void save_frame(registers_t *r) {
+    registers_t *dst = (registers_t*)tasks[current_task].stack_phys;
+    for (int i = 0; i < sizeof(registers_t) / sizeof(u64); i++)
+        ((u64*)dst)[i] = ((u64*)r)[i];
+    tasks[current_task].rsp = (u64)dst;
+}
+
 static registers_t *schedule(registers_t *r) {
-    if (current_task >= 0)
-        tasks[current_task].rsp = (u64)r;
-    tasks[current_task].state = TASK_READY;
+    if (current_task >= 0) {
+        save_frame(r);
+        tasks[current_task].state = TASK_READY;
+    }
     int next = schedule_next();
     tasks[next].state = TASK_RUNNING;
     current_task = next;
+    if (tasks[next].pml4_phys)
+        paging_switch(tasks[next].pml4_phys);
     return (registers_t*)tasks[current_task].rsp;
 }
 
@@ -57,6 +67,32 @@ registers_t *isr_handler(registers_t *r) {
             __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
             puts(" CR2: ");
             puthex(cr2);
+            puts(" CR3: ");
+            u64 cr3;
+            __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+            puthex(cr3);
+            u64 *pde = (u64*)(cr3);
+            u64 pml4_i = (cr2 >> 39) & 0x1FF;
+            u64 pdpt_i = (cr2 >> 30) & 0x1FF;
+            u64 pdt_i  = (cr2 >> 21) & 0x1FF;
+            u64 pt_i   = (cr2 >> 12) & 0x1FF;
+            puts(" PML4["); puthex(pml4_i); puts("]");
+            puthex(pde[pml4_i]);
+            if (pde[pml4_i] & 1) {
+                u64 *pdpt = (u64*)(pde[pml4_i] & ~0xFFF);
+                puts(" PDPT["); puthex(pdpt_i); puts("]");
+                puthex(pdpt[pdpt_i]);
+                if (pdpt[pdpt_i] & 1) {
+                    u64 *pdt = (u64*)(pdpt[pdpt_i] & ~0xFFF);
+                    puts(" PDT["); puthex(pdt_i); puts("]");
+                    puthex(pdt[pdt_i]);
+                    if ((pdt[pdt_i] & 1) && !(pdt[pdt_i] & PAGE_PS)) {
+                        u64 *pt = (u64*)(pdt[pdt_i] & ~0xFFF);
+                        puts(" PT["); puthex(pt_i); puts("]");
+                        puthex(pt[pt_i]);
+                    }
+                }
+            }
         }
         puts("\r\n");
         __asm__ volatile("cli; hlt");
@@ -67,11 +103,6 @@ registers_t *isr_handler(registers_t *r) {
         if (n >= 40) outb(PIC2_COMMAND, PIC_EOI);
         outb(PIC1_COMMAND, PIC_EOI);
 
-        if (n == 33) {
-            u8 sc = inb(0x60);
-            keyboard_isr(sc);
-        }
-
         if (n == 32) {
             ticks++;
             if (num_tasks > 1 && (r->cs & 3))
@@ -81,7 +112,17 @@ registers_t *isr_handler(registers_t *r) {
     }
 
     if (n == 0x80) {
-        r->rax = syscall_handler(r->rax, r->rdi, r->rsi, r->rdx);
+        r->rax = syscall_handler(r->rax, r->rdi, r->rsi, r->rdx, r->rcx);
+        if (num_tasks > 1) {
+            save_frame(r);
+            tasks[current_task].state = TASK_READY;
+            int next = schedule_next();
+            tasks[next].state = TASK_RUNNING;
+            current_task = next;
+            if (tasks[next].pml4_phys)
+                paging_switch(tasks[next].pml4_phys);
+            return (registers_t*)tasks[current_task].rsp;
+        }
         return r;
     }
 

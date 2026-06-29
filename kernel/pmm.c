@@ -30,7 +30,7 @@ void pmm_init(void)
         for (u64 addr = start; addr < end; addr += PAGE_SIZE) {
             if (addr >= 0x1000 && addr < 0x4000) continue;
             if (addr >= 0x7C00 && addr < 0x8600) continue;
-            if (addr >= 0x100000 && addr < 0x102000) continue;
+            if (addr >= 0x100000 && addr < 0x108000) continue;
 
             *(u64*)addr = (u64)free_stack;
             free_stack = (void*)addr;

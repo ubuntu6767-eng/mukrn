@@ -5,11 +5,12 @@
 #include "paging.h"
 #include "gdt.h"
 #include "task.h"
-#include "keyboard.h"
 #include "syscall.h"
 
 extern unsigned char _binary_shell_bin_start[];
 extern unsigned char _binary_shell_bin_end[];
+extern unsigned char _binary_keyboard_driver_bin_start[];
+extern unsigned char _binary_keyboard_driver_bin_end[];
 
 void __attribute__((section(".entry"))) kmain(void)
 {
@@ -35,17 +36,25 @@ void __attribute__((section(".entry"))) kmain(void)
     pmm_init();
     paging_init();
     task_init();
-    keyboard_init();
     gdt_setup_tss();
+
+    u64 kbd_size = (u64)_binary_keyboard_driver_bin_end - (u64)_binary_keyboard_driver_bin_start;
+    puts("[kernel] Keyboard driver size: ");
+    puthex(kbd_size);
+    puts(" bytes\r\n");
+    create_process(_binary_keyboard_driver_bin_start, kbd_size, 0x400000);
+    puts(" kbd0.pml4="); puthex(tasks[0].pml4_phys);
+    puts(" kbd0.pid="); puthex(tasks[0].pid); putc('\n');
 
     u64 shell_size = (u64)_binary_shell_bin_end - (u64)_binary_shell_bin_start;
     puts("[kernel] Shell size: ");
     puthex(shell_size);
     puts(" bytes\r\n");
+    create_process(_binary_shell_bin_start, shell_size, 0x600000);
+    puts(" sh1.pml4="); puthex(tasks[1].pml4_phys);
+    puts(" sh1.pid="); puthex(tasks[1].pid); putc('\n');
 
-    create_process(_binary_shell_bin_start, shell_size);
-
-    puts("[kernel] Starting shell...\r\n");
+    puts("[kernel] Starting scheduler...\r\n");
     scheduler_start();
 
     for (;;) __asm__ volatile("hlt");

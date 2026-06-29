@@ -1,69 +1,78 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Building C kernel (x86-64) ==="
-for SRC in kernel.c idt.c serial.c pmm.c paging.c task.c gdt.c keyboard.c syscall.c; do
-    gcc -m64 -ffreestanding -nostdlib -nostartfiles \
-        -fno-PIE -fno-asynchronous-unwind-tables -fno-stack-protector \
-        -fno-toplevel-reorder -mno-red-zone -mgeneral-regs-only \
-        -c "$SRC" -o "${SRC%.c}.o"
+mkdir -p build
+
+echo "=== Building C kernel ==="
+CFLAGS="-m64 -ffreestanding -nostdlib -nostartfiles \
+    -fno-PIE -fno-asynchronous-unwind-tables -fno-stack-protector \
+    -fno-toplevel-reorder -mno-red-zone -mgeneral-regs-only \
+    -Ikernel/include"
+
+for SRC in kernel.c idt.c serial.c pmm.c paging.c task.c gdt.c syscall.c; do
+    gcc $CFLAGS -c "kernel/$SRC" -o "build/${SRC%.c}.o"
 done
 
 echo "=== Assembling ISR stubs ==="
-nasm -f elf64 -o isr_stubs.o isr_stubs.asm
+nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
-echo "=== Building shell (user-space) ==="
-gcc -m64 -ffreestanding -nostdlib -nostartfiles \
-    -fno-PIE -fno-asynchronous-unwind-tables -fno-stack-protector \
-    -mno-red-zone -mgeneral-regs-only \
-    -c shell.c -o shell_user.o
-ld -m elf_x86_64 -Ttext=0x400000 --oformat binary -o shell.bin shell_user.o
+echo "=== User-space keyboard driver ==="
+gcc $CFLAGS -c user/keyboard_driver.c -o build/kbd_user.o
+ld -m elf_x86_64 -Ttext=0x400000 --oformat binary -o build/keyboard_driver.bin build/kbd_user.o
 
-echo "=== Embedding shell into kernel ==="
+echo "=== User-space shell ==="
+gcc $CFLAGS -c user/shell.c -o build/shell_user.o
+ld -m elf_x86_64 -Ttext=0x600000 --oformat binary -o build/shell.bin build/shell_user.o
+
+echo "=== Embedding binaries ==="
+cd build
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    keyboard_driver.bin kbd_embed.o
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     shell.bin shell_embed.o
+cd - > /dev/null
 
-ld -m elf_x86_64 -T linker.ld --oformat binary -o kernel.bin \
-    kernel.o idt.o serial.o pmm.o paging.o \
-    task.o gdt.o keyboard.o syscall.o \
-    isr_stubs.o shell_embed.o
+ld -m elf_x86_64 -T linker.ld --oformat binary -o build/kernel.bin \
+    build/kernel.o build/idt.o build/serial.o build/pmm.o build/paging.o \
+    build/task.o build/gdt.o build/syscall.o \
+    build/isr_stubs.o build/kbd_embed.o build/shell_embed.o
 
-KERNEL_SIZE=$(stat -c%s kernel.bin)
+KERNEL_SIZE=$(stat -c%s build/kernel.bin)
 KERNEL_SECTORS=$(( (KERNEL_SIZE + 511) / 512 ))
 echo "Kernel: $KERNEL_SIZE bytes -> $KERNEL_SECTORS sectors"
 
-truncate -s $((KERNEL_SECTORS * 512)) kernel.bin
+truncate -s $((KERNEL_SECTORS * 512)) build/kernel.bin
 
 KERNEL_LBA=5
-echo "Kernel LBA: $KERNEL_LBA"
 
 echo "=== Building stage2 ==="
-nasm -f bin -o stage2.bin \
+nasm -f bin -o build/stage2.bin \
     -dKERNEL_LBA=$KERNEL_LBA \
     -dKERNEL_SECTORS=$KERNEL_SECTORS \
-    stage2.asm
+    boot/stage2.asm
 
-STAGE2_SIZE=$(stat -c%s stage2.bin)
+STAGE2_SIZE=$(stat -c%s build/stage2.bin)
 if [ $STAGE2_SIZE -gt 2048 ]; then
     echo "ERROR: stage2 too big ($STAGE2_SIZE bytes, max 2048)"
     exit 1
 fi
-truncate -s 2048 stage2.bin
+truncate -s 2048 build/stage2.bin
 echo "Stage2: $STAGE2_SIZE bytes -> 4 sectors"
 
 echo "=== Building MBR ==="
-nasm -f bin -o boot.bin boot.asm
+nasm -f bin -o build/boot.bin boot/boot.asm
 
 echo "=== Creating disk image ==="
-cat boot.bin stage2.bin kernel.bin > os_image.bin
-SIZE=$(stat -c%s os_image.bin)
+cat build/boot.bin build/stage2.bin build/kernel.bin > build/os_image.bin
+SIZE=$(stat -c%s build/os_image.bin)
 PADDED=$(( (SIZE + 1048575) / 1048576 * 1048576 ))
-truncate -s $PADDED os_image.bin
+truncate -s $PADDED build/os_image.bin
 echo "Image: $SIZE bytes (padded to $PADDED)"
 
-echo "=== Running QEMU ==="
-qemu-system-x86_64 \
-    -drive format=raw,file=os_image.bin,if=ide \
-    -nographic \
-    -no-reboot
+#echo "=== Running QEMU ==="
+## qemu-system-x86_64 \
+#    -drive format=raw,file=build/os_image.bin,if=ide \
+#    -nographic \
+#    -no-reboot

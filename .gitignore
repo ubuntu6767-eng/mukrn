@@ -1,0 +1,6 @@
+build/
+os_image.bin
+kernel.bin
+stage2.bin
+boot.bin
+*.o
