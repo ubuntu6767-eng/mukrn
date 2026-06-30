@@ -16,6 +16,8 @@
 #define SYSCALL_IRQ_REGISTER 10
 #define SYSCALL_MMAP      11
 #define SYSCALL_MUNMAP    12
+#define SYSCALL_READ_SECTOR 13
+#define SYSCALL_SPAWN_EXEC  14
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4);
 

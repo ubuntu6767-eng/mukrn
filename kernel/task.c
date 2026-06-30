@@ -17,6 +17,8 @@ extern unsigned char _binary_serial_elf_start[];
 extern unsigned char _binary_serial_elf_end[];
 extern unsigned char _binary_disk_elf_start[];
 extern unsigned char _binary_disk_elf_end[];
+extern unsigned char _binary_fat32_elf_start[];
+extern unsigned char _binary_fat32_elf_end[];
 
 embed_prog_t embedded[EMBED_COUNT] = {
     { _binary_init_elf_start,             _binary_init_elf_end,             0x400000, 1 },
@@ -25,12 +27,13 @@ embed_prog_t embedded[EMBED_COUNT] = {
     { _binary_shell_elf_start,           _binary_shell_elf_end,           0x700000, 4 },
     { _binary_serial_elf_start,          _binary_serial_elf_end,           0x800000, 5 },
     { _binary_disk_elf_start,            _binary_disk_elf_end,             0x900000, 6 },
+    { _binary_fat32_elf_start,           _binary_fat32_elf_end,           0xA00000, 7 },
 };
 
 task_t tasks[MAX_TASKS];
 int current_task = -1;
 int num_tasks = 0;
-static u32 next_pid = 1;
+static u32 next_pid = 8;
 
 void task_init(void)
 {
@@ -413,4 +416,76 @@ int sys_munmap(u64 virt, u64 size)
         unmap_page(v);
     paging_switch(old);
     return 0;
+}
+
+#define ATA_DATA      0x1F0
+#define ATA_ERROR     0x1F1
+#define ATA_SEC_CNT   0x1F2
+#define ATA_LBA_LO    0x1F3
+#define ATA_LBA_MID   0x1F4
+#define ATA_LBA_HI    0x1F5
+#define ATA_DRIVE     0x1F6
+#define ATA_COMMAND   0x1F7
+#define ATA_STATUS    0x1F7
+#define ATA_CMD_READ  0x20
+
+static int ata_wait_busy(void)
+{
+    for (int tries = 0; tries < 10000000; tries++) {
+        u8 s = inb(ATA_STATUS);
+        if (!(s & 0x80)) {
+            if (s & 0x01 || s & 0x20) return -1;
+            if (s & 0x08) return 0;
+            return -1;
+        }
+        __asm__ volatile("pause");
+    }
+    return -1;
+}
+
+int sys_read_sector(u64 drive, u64 lba, u8 *buf)
+{
+    if (!buf) return -1;
+
+    __asm__ volatile("cli");
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+
+    outb(ATA_SEC_CNT, 1);
+    outb(ATA_LBA_LO, lba & 0xFF);
+    outb(ATA_LBA_MID, (lba >> 8) & 0xFF);
+    outb(ATA_LBA_HI, (lba >> 16) & 0xFF);
+    outb(ATA_DRIVE, 0xE0 | (drive << 4) | ((lba >> 24) & 0x0F));
+    outb(ATA_COMMAND, ATA_CMD_READ);
+    inb(ATA_STATUS);
+    __asm__ volatile("sti");
+
+    if (ata_wait_busy() < 0) return -1;
+
+    __asm__ volatile("cli");
+    for (int i = 0; i < 256; i++) {
+        u16 w = inw(ATA_DATA);
+        buf[i * 2] = w & 0xFF;
+        buf[i * 2 + 1] = (w >> 8);
+    }
+    inb(ATA_STATUS);
+    __asm__ volatile("sti");
+    return 0;
+}
+
+#define SPAWN_BUF_SIZE 16384
+static u8 spawn_buf[SPAWN_BUF_SIZE];
+
+int sys_spawn_exec(void *elf, u64 size, u64 *pid_out)
+{
+    if (!elf || size < 4 || size > SPAWN_BUF_SIZE) return -1;
+    u8 *src = (u8*)elf;
+    for (u64 i = 0; i < size; i++)
+        spawn_buf[i] = src[i];
+    int pid = create_elf(spawn_buf, size, 0);
+    if (pid >= 0 && pid_out)
+        *pid_out = (u64)pid;
+    return pid >= 0 ? 0 : -1;
 }

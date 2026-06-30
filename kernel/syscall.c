@@ -41,6 +41,10 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return sys_mmap(arg1, arg2, arg3);
     case SYSCALL_MUNMAP:
         return sys_munmap(arg1, arg2);
+    case SYSCALL_READ_SECTOR:
+        return sys_read_sector(arg1, arg2, (u8*)arg3);
+    case SYSCALL_SPAWN_EXEC:
+        return sys_spawn_exec((void*)arg1, arg2, (u64*)arg3);
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);

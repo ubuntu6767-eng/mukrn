@@ -29,11 +29,12 @@ static int getstate(u64 pid);
 static init_entry_t config[] = {
     {4, 5, 1},
     {5, 6, 1},
+    {6, 7, 1},
     {1, 2, 1},
     {2, 3, 1},
     {3, 4, 1},
 };
-static int n = 5;
+static int n = 6;
 
 void _start(void)
 {

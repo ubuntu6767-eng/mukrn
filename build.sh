@@ -40,6 +40,18 @@ echo "=== User-space disk driver ==="
 gcc $CFLAGS -c user/disk.c -o build/disk_user.o
 ld -m elf_x86_64 -Ttext=0x900000 -o build/disk.elf build/disk_user.o
 
+echo "=== User-space FAT32 driver ==="
+gcc $CFLAGS -c user/fat32.c -o build/fat32_user.o
+ld -m elf_x86_64 -Ttext=0xA00000 -o build/fat32.elf build/fat32_user.o
+
+echo "=== Spawn test ELF ==="
+gcc $CFLAGS -c user/hello_spawn.c -o build/hello_spawn_user.o
+ld -m elf_x86_64 -Ttext=0x500000 -o build/hello_spawn.elf build/hello_spawn_user.o
+
+echo "=== User-space ATA test ==="
+gcc $CFLAGS -c user/testata.c -o build/testata_user.o
+ld -m elf_x86_64 -Ttext=0xB00000 -o build/testata.elf build/testata_user.o
+
 echo "=== Embedding binaries ==="
 cd build
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
@@ -60,12 +72,18 @@ objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     disk.elf disk_embed.o
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    fat32.elf fat32_embed.o
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    testata.elf testata_embed.o
 cd - > /dev/null
 
 ld -m elf_x86_64 -T linker.ld --oformat binary -o build/kernel.bin \
     build/kernel.o build/idt.o build/serial.o build/pmm.o build/paging.o \
     build/task.o build/gdt.o build/syscall.o \
-    build/isr_stubs.o build/init_embed.o build/kbd_embed.o build/cmd_embed.o build/shell_embed.o build/serial_embed.o build/disk_embed.o
+    build/isr_stubs.o build/init_embed.o build/kbd_embed.o build/cmd_embed.o build/shell_embed.o build/serial_embed.o build/disk_embed.o build/fat32_embed.o build/testata_embed.o
 
 KERNEL_SIZE=$(stat -c%s build/kernel.bin)
 KERNEL_SECTORS=$(( (KERNEL_SIZE + 511) / 512 ))
@@ -99,8 +117,16 @@ PADDED=$(( (SIZE + 1048575) / 1048576 * 1048576 ))
 truncate -s $PADDED build/os_image.bin
 echo "Image: $SIZE bytes (padded to $PADDED)"
 
+echo "=== Creating FAT32 data disk ==="
+dd if=/dev/zero of=build/fat32.img bs=1M count=4 2>/dev/null
+mkfs.fat -F 32 build/fat32.img > /dev/null 2>&1
+mcopy -i build/fat32.img user/testfiles/hello.txt ::hello.txt
+MTOOLS_NO_VFAT=1 mcopy -i build/fat32.img build/hello_spawn.elf ::spawn.elf
+echo "FAT32 image created"
+
 #echo "=== Running QEMU ==="
-## qemu-system-x86_64 \
-#    -drive format=raw,file=build/os_image.bin,if=ide \
+#qemu-system-x86_64 \
+#    -drive format=raw,file=build/os_image.bin,if=ide,index=0 \
+#    -drive format=raw,file=build/fat32.img,if=ide,index=1 \
 #    -nographic \
 #    -no-reboot
