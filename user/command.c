@@ -44,7 +44,7 @@ void _start(void)
         char *cmd = (char*)msg.data;
 
         if (cmd[0] == 'h') {
-            send_str(shell, "Commands:\r\n  help\r\n  readfile <path>\r\n  spawn <path>\r\n  clear\r\n  exit\r\n");
+            send_str(shell, "Commands:\r\n  help\r\n  readfile <path>\r\n  spawn <path>\r\n  writefile <path> <data>\r\n  delete <path>\r\n  mkdir <path>\r\n  rmdir <path>\r\n  clear\r\n  exit\r\n");
         } else if (cmd[0] == 'c') {
             send_str(shell, "\x1b[2J\x1b[H");
         } else if (cmd[0] == 'e') {
@@ -75,7 +75,7 @@ void _start(void)
                     break;
                 }
             }
-        } else if (cmd[0] == 's') {
+        } else if (cmd[0] == 's' && cmd[1] == 'p') {
             char *path = cmd + 6;
             while (*path == ' ') path++;
             send(FAT32_PID, FAT32_TYPE_SPAWN, (const u8*)path, 63);
@@ -101,6 +101,75 @@ void _start(void)
                 send_str(shell, hex + z);
                 send_str(shell, "\r\n");
             }
+        } else if (cmd[0] == 'w') {
+            char *path = cmd + 10;
+            while (*path == ' ') path++;
+            char *sep = path;
+            while (*sep && *sep != ' ') sep++;
+            if (*sep == 0 || sep == path) {
+                send_str(shell, "Usage: writefile <path> <data>\r\n");
+                continue;
+            }
+            int path_len = (int)(sep - path);
+            char *data_start = sep + 1;
+            int data_len = 0;
+            while (data_start[data_len]) data_len++;
+            u8 ipc_data[64];
+            int i;
+            for (i = 0; i < path_len && i < 50; i++)
+                ipc_data[i] = path[i];
+            ipc_data[i++] = 0;
+            int space = 64 - i;
+            if (data_len > space) data_len = space;
+            for (int j = 0; j < data_len; j++)
+                ipc_data[i + j] = data_start[j];
+            send(FAT32_PID, 2, ipc_data, i + data_len);
+            ipc_msg_t resp;
+            while (recv(&resp) != 0 || resp.sender_pid != FAT32_PID)
+                __asm__ volatile("pause");
+            if (resp.type >= 250) {
+                char buf[16];
+                int n = resp.type;
+                buf[0] = 'E'; buf[1] = 'r'; buf[2] = 'r'; buf[3] = ':'; buf[4] = ' ';
+                buf[5] = (n / 100) + '0'; buf[6] = ((n / 10) % 10) + '0'; buf[7] = (n % 10) + '0';
+                buf[8] = '\r'; buf[9] = '\n'; buf[10] = 0;
+                send(shell, 2, (u8*)buf, 11);
+            } else {
+                send_str(shell, "OK\r\n");
+            }
+        } else if (cmd[0] == 'd') {
+            char *path = cmd + 7;
+            while (*path == ' ') path++;
+            send(FAT32_PID, 3, (const u8*)path, 63);
+            ipc_msg_t resp;
+            while (recv(&resp) != 0 || resp.sender_pid != FAT32_PID)
+                __asm__ volatile("pause");
+            if (resp.type == FAT32_ERR)
+                send_str(shell, "Delete error\r\n");
+            else
+                send_str(shell, "OK\r\n");
+        } else if (cmd[0] == 'm') {
+            char *path = cmd + 6;
+            while (*path == ' ') path++;
+            send(FAT32_PID, 4, (const u8*)path, 63);
+            ipc_msg_t resp;
+            while (recv(&resp) != 0 || resp.sender_pid != FAT32_PID)
+                __asm__ volatile("pause");
+            if (resp.type == FAT32_ERR)
+                send_str(shell, "Mkdir error\r\n");
+            else
+                send_str(shell, "OK\r\n");
+        } else if (cmd[0] == 'r' && cmd[1] == 'm') {
+            char *path = cmd + 6;
+            while (*path == ' ') path++;
+            send(FAT32_PID, 5, (const u8*)path, 63);
+            ipc_msg_t resp;
+            while (recv(&resp) != 0 || resp.sender_pid != FAT32_PID)
+                __asm__ volatile("pause");
+            if (resp.type == FAT32_ERR)
+                send_str(shell, "Rmdir error\r\n");
+            else
+                send_str(shell, "OK\r\n");
         } else {
             send_str(shell, "Unknown\r\n");
         }

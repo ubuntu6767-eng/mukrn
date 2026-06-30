@@ -428,8 +428,23 @@ int sys_munmap(u64 virt, u64 size)
 #define ATA_COMMAND   0x1F7
 #define ATA_STATUS    0x1F7
 #define ATA_CMD_READ  0x20
+#define ATA_CMD_WRITE 0x30
 
 static int ata_wait_busy(void)
+{
+    for (int tries = 0; tries < 10000000; tries++) {
+        u8 s = inb(ATA_STATUS);
+        if (!(s & 0x80)) {
+            if (s & 0x01 || s & 0x20) return -1;
+            if (s & 0x08) return 0;
+            return -1;
+        }
+        __asm__ volatile("pause");
+    }
+    return -1;
+}
+
+static int ata_wait_drq(void)
 {
     for (int tries = 0; tries < 10000000; tries++) {
         u8 s = inb(ATA_STATUS);
@@ -473,6 +488,45 @@ int sys_read_sector(u64 drive, u64 lba, u8 *buf)
     inb(ATA_STATUS);
     __asm__ volatile("sti");
     return 0;
+}
+
+int sys_write_sector(u64 drive, u64 lba, u8 *buf)
+{
+    if (!buf) return -1;
+
+    __asm__ volatile("cli");
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+    inb(ATA_STATUS);
+
+    outb(ATA_SEC_CNT, 1);
+    outb(ATA_LBA_LO, lba & 0xFF);
+    outb(ATA_LBA_MID, (lba >> 8) & 0xFF);
+    outb(ATA_LBA_HI, (lba >> 16) & 0xFF);
+    outb(ATA_DRIVE, 0xE0 | (drive << 4) | ((lba >> 24) & 0x0F));
+    outb(ATA_COMMAND, ATA_CMD_WRITE);
+    inb(ATA_STATUS);
+    __asm__ volatile("sti");
+
+    if (ata_wait_drq() < 0) return -1;
+
+    __asm__ volatile("cli");
+    for (int i = 0; i < 256; i++) {
+        u16 w = buf[i * 2] | ((u16)buf[i * 2 + 1] << 8);
+        outw(ATA_DATA, w);
+    }
+    __asm__ volatile("sti");
+
+    for (int tries = 0; tries < 10000000; tries++) {
+        u8 s = inb(ATA_STATUS);
+        if (!(s & 0x80)) {
+            if (s & 0x01 || s & 0x20) return -1;
+            return 0;
+        }
+        __asm__ volatile("pause");
+    }
+    return -1;
 }
 
 #define SPAWN_BUF_SIZE 16384
