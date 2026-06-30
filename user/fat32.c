@@ -290,7 +290,7 @@ static int resolve_parent(const char *path, u32 *parent_cluster, const char **fi
     return 0;
 }
 
-static u8 file_buf[16384];
+static u8 file_buf[32768];
 
 void _start(void)
 {
@@ -310,42 +310,37 @@ void _start(void)
                 send(req.sender_pid, 255, 0, 0);
                 continue;
             }
-            if (size > sizeof(file_buf)) {
-                send(req.sender_pid, 255, 0, 0);
-                continue;
-            }
             u32 c = cluster;
             u32 off = 0;
             while (!is_eoc(c) && c >= 2 && off < size) {
                 u32 sbase = cluster_to_sector(c);
                 for (int s = 0; s < sectors_per_cluster && off < size; s++) {
-                    if (read_sector(FAT32_DRIVE, sbase + s, file_buf + off) < 0) {
+                    u8 sec[512];
+                    if (read_sector(FAT32_DRIVE, sbase + s, sec) < 0) {
                         send(req.sender_pid, 255, 0, 0);
                         goto next;
                     }
-                    off += bytes_per_sector;
+                    u32 end = off + bytes_per_sector;
+                    if (end > size) end = size;
+                    while (off < end) {
+                        u32 chunk = end - off;
+                        if (chunk > 59) chunk = 59;
+                        u8 msg[64];
+                        msg[0] = off & 0xFF;
+                        msg[1] = (off >> 8) & 0xFF;
+                        msg[2] = (off >> 16) & 0xFF;
+                        msg[3] = (off >> 24) & 0xFF;
+                        msg[4] = chunk;
+                        u32 sec_off = off % bytes_per_sector;
+                        for (u32 j = 0; j < chunk; j++)
+                            msg[5 + j] = sec[sec_off + j];
+                        send(req.sender_pid, 100, msg, 5 + chunk);
+                        off += chunk;
+                    }
                 }
                 c = next_cluster(c);
             }
-            if (off < size) {
-                send(req.sender_pid, 255, 0, 0);
-                continue;
-            }
-            u32 offs = 0;
-            while (offs < size) {
-                u32 chunk = size - offs;
-                if (chunk > 59) chunk = 59;
-                u8 msg[64];
-                msg[0] = offs & 0xFF;
-                msg[1] = (offs >> 8) & 0xFF;
-                msg[2] = (offs >> 16) & 0xFF;
-                msg[3] = (offs >> 24) & 0xFF;
-                msg[4] = chunk;
-                for (u32 j = 0; j < chunk; j++)
-                    msg[5 + j] = file_buf[offs + j];
-                send(req.sender_pid, 100, msg, 5 + chunk);
-                offs += chunk;
-            }
+            send(req.sender_pid, 101, 0, 0);
         } else if (req.type == 1) {
             char *path = (char*)req.data;
             u32 cluster, size;

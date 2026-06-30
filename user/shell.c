@@ -51,18 +51,26 @@ void _start(void)
         send(CMD_PID, 1, (const u8*)buf, len);
 
         ipc_msg_t resp;
-        int r;
+        int done = 0;
         do {
-            __asm__ volatile("pause");
-            r = recv(&resp);
-        } while (r != 0 || resp.sender_pid != CMD_PID);
+            int r;
+            do {
+                __asm__ volatile("pause");
+                r = recv(&resp);
+            } while (r != 0 || resp.sender_pid != CMD_PID);
 
-        if (resp.type == 3) {
+            if (resp.type == 3) {
+                puts((const char*)resp.data);
+                done = 2;
+                break;
+            }
+            if (resp.type == 4) {
+                done = 1;
+                break;
+            }
             puts((const char*)resp.data);
-            break;
-        }
-
-        puts((const char*)resp.data);
+        } while (!done);
+        if (done == 2) break;
     }
     puts("shell: goodbye\r\n");
     for (;;) __asm__ volatile("pause");

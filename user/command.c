@@ -45,8 +45,10 @@ void _start(void)
 
         if (cmd[0] == 'h') {
             send_str(shell, "Commands:\r\n  help\r\n  readfile <path>\r\n  spawn <path>\r\n  writefile <path> <data>\r\n  delete <path>\r\n  mkdir <path>\r\n  rmdir <path>\r\n  clear\r\n  exit\r\n");
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'c') {
             send_str(shell, "\x1b[2J\x1b[H");
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'e') {
             send_str(shell, "Bye!\r\n");
             send(shell, 3, (const u8*)"", 1);
@@ -55,26 +57,23 @@ void _start(void)
             char *path = cmd + 9;
             while (*path == ' ') path++;
             send(FAT32_PID, FAT32_TYPE_READ, (const u8*)path, 63);
-            char out[64];
-            int olen = 0;
             for (;;) {
                 ipc_msg_t resp;
                 while (recv(&resp) != 0 || resp.sender_pid != FAT32_PID)
                     __asm__ volatile("pause");
                 if (resp.type == FAT32_ERR) {
-                    send_str(shell, "Error\r\n");
+                    send(shell, 2, (u8*)"Error\r\n", 7);
+                    send(shell, 4, 0, 0);
                     break;
                 }
-                if (resp.type != FAT32_CHUNK) break;
-                u32 chunk_sz = resp.data[4];
-                for (u32 i = 0; i < chunk_sz && olen < 60; i++)
-                    out[olen++] = resp.data[5 + i];
-                if (chunk_sz < 59) {
-                    out[olen] = 0;
-                    send_str(shell, out);
-                    break;
+                if (resp.type == 101) break;
+                if (resp.type == FAT32_CHUNK) {
+                    u32 chunk_sz = resp.data[4];
+                    send(shell, 2, resp.data + 5, chunk_sz);
                 }
             }
+            send(shell, 2, (u8*)"\r\n", 2);
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 's' && cmd[1] == 'p') {
             char *path = cmd + 6;
             while (*path == ' ') path++;
@@ -101,6 +100,7 @@ void _start(void)
                 send_str(shell, hex + z);
                 send_str(shell, "\r\n");
             }
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'w') {
             char *path = cmd + 10;
             while (*path == ' ') path++;
@@ -137,6 +137,7 @@ void _start(void)
             } else {
                 send_str(shell, "OK\r\n");
             }
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'd') {
             char *path = cmd + 7;
             while (*path == ' ') path++;
@@ -148,6 +149,7 @@ void _start(void)
                 send_str(shell, "Delete error\r\n");
             else
                 send_str(shell, "OK\r\n");
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'm') {
             char *path = cmd + 6;
             while (*path == ' ') path++;
@@ -159,6 +161,7 @@ void _start(void)
                 send_str(shell, "Mkdir error\r\n");
             else
                 send_str(shell, "OK\r\n");
+            send(shell, 4, 0, 0);
         } else if (cmd[0] == 'r' && cmd[1] == 'm') {
             char *path = cmd + 6;
             while (*path == ' ') path++;
@@ -170,8 +173,10 @@ void _start(void)
                 send_str(shell, "Rmdir error\r\n");
             else
                 send_str(shell, "OK\r\n");
+            send(shell, 4, 0, 0);
         } else {
             send_str(shell, "Unknown\r\n");
+            send(shell, 4, 0, 0);
         }
     }
 }
