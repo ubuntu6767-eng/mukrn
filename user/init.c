@@ -1,135 +1,63 @@
 typedef unsigned long long u64;
 typedef unsigned char u8;
-typedef unsigned short u16;
 
-typedef struct {
-    u64 sender_pid;
-    u64 type;
-    u8 data[64];
-    u64 length;
-} ipc_msg_t;
+static u64 syscall(u64 n, u64 a1, u64 a2, u64 a3, u64 a4)
+{
+    u64 r;
+    __asm__ volatile("int $0x80" : "=a"(r) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "c"(a4));
+    return r;
+}
 
-typedef struct {
-    u64 idx;
-    u64 want_pid;
-    int restart;
-} init_entry_t;
+#define SERIAL_DATA 0x3F8
+#define SERIAL_LSR 0x3FD
 
-static void putc(char c);
-static void puts(const char *s);
-static void puthex(u64 v);
-static int recv(ipc_msg_t *msg);
-static int send(u64 pid, u64 type, const u8 *data, u64 len);
-static int spawn(u64 idx);
-static int wait_any(void);
-static int getstate(u64 pid);
+static void putc(char c)
+{
+    while (!(syscall(4, SERIAL_LSR, 0, 0, 0) & 0x20));
+    syscall(5, SERIAL_DATA, c, 0, 0);
+}
 
-#define SERIAL_PID 5
-
-static init_entry_t config[] = {
-    {4, 5, 1},
-    {5, 6, 1},
-    {6, 7, 1},
-    {1, 2, 1},
-    {2, 3, 1},
-    {3, 4, 1},
-};
-static int n = 6;
+static void puts(const char *s)
+{
+    while (*s) putc(*s++);
+}
 
 void _start(void)
 {
-    u64 pids[16];
+    u64 pid = syscall(1, 0, 0, 0, 0);
 
-    int serial_pid = spawn(config[0].idx);
-    if (serial_pid < 0) {
-        for (;;) __asm__ volatile("hlt");
-    }
-    pids[0] = (u64)serial_pid;
+    puts("\r\n[init] PID = ");
 
-    puts("init: booting\r\n");
+    u64 ticks = syscall(15, 0, 0, 0, 0);
+    puts("ticks = ");
+    char buf[21];
+    int i = 20;
+    buf[i] = 0;
+    if (ticks == 0) buf[--i] = '0';
+    while (ticks) { buf[--i] = '0' + (ticks % 10); ticks /= 10; }
+    puts(buf + i);
 
-    for (int i = 1; i < n; i++) {
-        int pid = spawn(config[i].idx);
-        if (pid < 0) {
-            puts("init: spawn failed\r\n");
-            for (;;) {
-                putc('.');
-                for (volatile u64 i = 0; i < 5000000; i++);
-            }
-        }
-        pids[i] = (u64)pid;
-    }
+    syscall(14, 5000000, 0, 0, 0);
 
-    for (;;) {
-        wait_any();
-        for (int i = 0; i < n; i++) {
-            if (getstate(pids[i]) == 0) {
-                if (config[i].restart) {
-                    puts("init: restart ");
-                    puthex(pids[i]);
-                    putc('\n');
-                    pids[i] = (u64)spawn(config[i].idx);
-                }
-            }
-        }
-    }
-}
+    ticks = syscall(15, 0, 0, 0, 0);
+    puts(" after 5ms sleep ticks = ");
+    i = 20;
+    buf[i] = 0;
+    if (ticks == 0) buf[--i] = '0';
+    u64 t2 = ticks;
+    while (t2) { buf[--i] = '0' + (t2 % 10); t2 /= 10; }
+    puts(buf + i);
 
-static void putc(char c) {
-    u8 buf[64] = {c};
-    send(SERIAL_PID, 0, buf, 1);
-}
+    u64 brk_val = syscall(19, 0, 0, 0, 0);
+    puts(" brk=");
+    i = 20;
+    buf[i] = 0;
+    if (brk_val == 0) buf[--i] = '0';
+    while (brk_val) { buf[--i] = '0' + (brk_val % 10); brk_val /= 10; }
+    puts(buf + i);
 
-static void puts(const char *s) {
-    while (*s) {
-        u8 buf[64];
-        int i;
-        for (i = 0; i < 63 && s[i]; i++)
-            buf[i] = s[i];
-        buf[i] = 0;
-        send(SERIAL_PID, 1, buf, i + 1);
-        s += i;
-    }
-}
+    puts("\r\n[init] All syscalls OK\r\n");
 
-static void puthex(u64 v) {
-    char buf[17];
-    for (int i = 15; i >= 0; i--) {
-        int n = v & 0xF;
-        buf[i] = n < 10 ? '0' + n : 'a' + n - 10;
-        v >>= 4;
-    }
-    buf[16] = 0;
-    puts(buf);
-}
-
-static int recv(ipc_msg_t *msg) {
-    int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(3), "D"(msg));
-    return r;
-}
-
-static int send(u64 pid, u64 type, const u8 *data, u64 len) {
-    int r;
-    __asm__ volatile("int $0x80" : "=a"(r)
-        : "a"(2), "D"(pid), "S"(type), "d"((long)data), "c"(len));
-    return r;
-}
-
-static int spawn(u64 idx) {
-    int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(6), "D"(idx));
-    return r;
-}
-
-static int wait_any(void) {
-    int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(8));
-    return r;
-}
-
-static int getstate(u64 pid) {
-    int r;
-    __asm__ volatile("int $0x80" : "=a"(r) : "a"(9), "D"(pid));
-    return r;
+    for (;;)
+        __asm__ volatile("pause");
 }

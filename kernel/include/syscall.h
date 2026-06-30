@@ -16,9 +16,14 @@
 #define SYSCALL_IRQ_REGISTER 10
 #define SYSCALL_MMAP      11
 #define SYSCALL_MUNMAP    12
-#define SYSCALL_READ_SECTOR 13
-#define SYSCALL_SPAWN_EXEC  14
-#define SYSCALL_WRITE_SECTOR 15
+#define SYSCALL_KILL      13
+#define SYSCALL_NANOSLEEP 14
+#define SYSCALL_GETTICKS  15
+#define SYSCALL_DEBUG_PUTC 16
+#define SYSCALL_SHUTDOWN  17
+#define SYSCALL_MPROTECT  18
+#define SYSCALL_BRK       19
+#define SYSCALL_IRQ_ACK   20
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4);
 

@@ -41,12 +41,26 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return sys_mmap(arg1, arg2, arg3);
     case SYSCALL_MUNMAP:
         return sys_munmap(arg1, arg2);
-    case SYSCALL_READ_SECTOR:
-        return sys_read_sector(arg1, arg2, (u8*)arg3);
-    case SYSCALL_SPAWN_EXEC:
-        return sys_spawn_exec((void*)arg1, arg2, (u64*)arg3);
-    case SYSCALL_WRITE_SECTOR:
-        return sys_write_sector(arg1, arg2, (u8*)arg3);
+    case SYSCALL_KILL:
+        return sys_kill(arg1);
+    case SYSCALL_NANOSLEEP:
+        return sys_nanosleep(arg1);
+    case SYSCALL_GETTICKS:
+        return sys_getticks();
+    case SYSCALL_DEBUG_PUTC:
+        outb(0xE9, (u8)arg1);
+        return 0;
+    case SYSCALL_SHUTDOWN:
+        sys_shutdown();
+        return 0;
+    case SYSCALL_MPROTECT:
+        return sys_mprotect(arg1, arg2, arg3);
+    case SYSCALL_BRK:
+        return sys_brk(arg1);
+    case SYSCALL_IRQ_ACK:
+        outb(0x20, 0x20);
+        if (arg1 >= 8) outb(0xA0, 0x20);
+        return 0;
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);

@@ -16,74 +16,21 @@ done
 echo "=== Assembling ISR stubs ==="
 nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
-echo "=== User-space init ==="
+echo "=== Building init ==="
 gcc $CFLAGS -c user/init.c -o build/init_user.o
 ld -m elf_x86_64 -Ttext=0x400000 -o build/init.elf build/init_user.o
 
-echo "=== User-space keyboard driver ==="
-gcc $CFLAGS -c user/keyboard_driver.c -o build/kbd_user.o
-ld -m elf_x86_64 -Ttext=0x500000 -o build/kbd.elf build/kbd_user.o
-
-echo "=== User-space command ==="
-gcc $CFLAGS -c user/command.c -o build/command_user.o
-ld -m elf_x86_64 -Ttext=0x600000 -o build/command.elf build/command_user.o
-
-echo "=== User-space shell ==="
-gcc $CFLAGS -c user/shell.c -o build/shell_user.o
-ld -m elf_x86_64 -Ttext=0x700000 -o build/shell.elf build/shell_user.o
-
-echo "=== User-space serial driver ==="
-gcc $CFLAGS -c user/serial.c -o build/serial_user.o
-ld -m elf_x86_64 -Ttext=0x800000 -o build/serial.elf build/serial_user.o
-
-echo "=== User-space disk driver ==="
-gcc $CFLAGS -c user/disk.c -o build/disk_user.o
-ld -m elf_x86_64 -Ttext=0x900000 -o build/disk.elf build/disk_user.o
-
-echo "=== User-space FAT32 driver ==="
-gcc $CFLAGS -c user/fat32.c -o build/fat32_user.o
-ld -m elf_x86_64 -Ttext=0xA00000 -o build/fat32.elf build/fat32_user.o
-
-echo "=== Spawn test ELF ==="
-gcc $CFLAGS -c user/hello_spawn.c -o build/hello_spawn_user.o
-ld -m elf_x86_64 -Ttext=0x500000 -o build/hello_spawn.elf build/hello_spawn_user.o
-
-echo "=== User-space ATA test ==="
-gcc $CFLAGS -c user/testata.c -o build/testata_user.o
-ld -m elf_x86_64 -Ttext=0xB00000 -o build/testata.elf build/testata_user.o
-
-echo "=== Embedding binaries ==="
+echo "=== Embedding init ==="
 cd build
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     init.elf init_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    kbd.elf kbd_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    command.elf cmd_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    shell.elf shell_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    serial.elf serial_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    disk.elf disk_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    fat32.elf fat32_embed.o
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    testata.elf testata_embed.o
 cd - > /dev/null
 
 ld -m elf_x86_64 -T linker.ld --oformat binary -o build/kernel.bin \
     build/kernel.o build/idt.o build/serial.o build/pmm.o build/paging.o \
     build/task.o build/gdt.o build/syscall.o \
-    build/isr_stubs.o build/init_embed.o build/kbd_embed.o build/cmd_embed.o build/shell_embed.o build/serial_embed.o build/disk_embed.o build/fat32_embed.o build/testata_embed.o
+    build/isr_stubs.o build/init_embed.o
 
 KERNEL_SIZE=$(stat -c%s build/kernel.bin)
 KERNEL_SECTORS=$(( (KERNEL_SIZE + 511) / 512 ))
@@ -117,16 +64,4 @@ PADDED=$(( (SIZE + 1048575) / 1048576 * 1048576 ))
 truncate -s $PADDED build/os_image.bin
 echo "Image: $SIZE bytes (padded to $PADDED)"
 
-echo "=== Creating FAT32 data disk ==="
-dd if=/dev/zero of=build/fat32.img bs=1M count=4 2>/dev/null
-mkfs.fat -F 32 build/fat32.img > /dev/null 2>&1
-mcopy -i build/fat32.img user/testfiles/hello.txt ::hello.txt
-MTOOLS_NO_VFAT=1 mcopy -i build/fat32.img build/hello_spawn.elf ::spawn.elf
-echo "FAT32 image created"
 
-#echo "=== Running QEMU ==="
-#qemu-system-x86_64 \
-#    -drive format=raw,file=build/os_image.bin,if=ide,index=0 \
-#    -drive format=raw,file=build/fat32.img,if=ide,index=1 \
-#    -nographic \
-#    -no-reboot

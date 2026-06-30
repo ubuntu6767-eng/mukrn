@@ -40,7 +40,7 @@ typedef struct {
     u32 ipc_count;
 } task_t;
 
-#define EMBED_COUNT 7
+#define EMBED_COUNT 1
 typedef struct {
     unsigned char *start;
     unsigned char *end;
@@ -72,5 +72,11 @@ int sys_munmap(u64 virt, u64 size);
 int sys_read_sector(u64 drive, u64 lba, u8 *buf);
 int sys_write_sector(u64 drive, u64 lba, u8 *buf);
 int sys_spawn_exec(void *elf, u64 size, u64 *pid_out);
+int sys_kill(u64 pid);
+int sys_nanosleep(u64 ns);
+u64 sys_getticks(void);
+void sys_shutdown(void);
+int sys_mprotect(u64 virt, u64 size, u64 flags);
+int sys_brk(u64 addr);
 
 #endif

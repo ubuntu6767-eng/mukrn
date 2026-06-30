@@ -28,6 +28,8 @@ typedef struct {
     u64 rip, cs, rflags, rsp, ss;
 } __attribute__((packed)) registers_t;
 
+extern volatile u64 ticks;
+
 void idt_init(void);
 void pic_remap(void);
 void pit_init(u32 frequency);

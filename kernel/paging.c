@@ -102,6 +102,38 @@ void map_page(u64 virt, u64 phys, u64 flags)
     __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
+void map_page_flags(u64 virt, u64 flags)
+{
+    u64 pml4_i = (virt >> 39) & 0x1FF;
+    u64 pdpt_i = (virt >> 30) & 0x1FF;
+    u64 pdt_i  = (virt >> 21) & 0x1FF;
+    u64 pt_i   = (virt >> 12) & 0x1FF;
+
+    u64 *pml4 = (u64*)paging_root;
+    if (!(pml4[pml4_i] & 1)) return;
+    u64 *pdpt = (u64*)(pml4[pml4_i] & ~0xFFF);
+    if (!(pdpt[pdpt_i] & 1)) return;
+    u64 pde = pdpt[pdpt_i];
+    if (!(pde & 1)) return;
+
+    if (pde & PAGE_PS) {
+        pdpt[pdpt_i] = (pdpt[pdpt_i] & ~0x1FF) | (flags & 0x1FF);
+        __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
+        return;
+    }
+    u64 *pdt = (u64*)(pde & ~0xFFF);
+    if (!(pdt[pdt_i] & 1)) return;
+    if (pdt[pdt_i] & PAGE_PS) {
+        pdt[pdt_i] = (pdt[pdt_i] & ~0x1FF) | (flags & 0x1FF);
+        __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
+        return;
+    }
+    u64 *pt = (u64*)(pdt[pdt_i] & ~0xFFF);
+    if (!(pt[pt_i] & 1)) return;
+    pt[pt_i] = (pt[pt_i] & ~0x1FF) | (flags & 0x1FF);
+    __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
+}
+
 void unmap_page(u64 virt)
 {
     u64 pml4_i = (virt >> 39) & 0x1FF;
