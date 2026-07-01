@@ -446,7 +446,7 @@ int sys_kill(u64 pid)
 int sys_nanosleep(u64 ns)
 {
     u64 start = ticks;
-    u64 target = ns / 10000000;
+    u64 target = ns / 2000000;
     while ((ticks - start) < target) {
         tasks[current_task].state = TASK_BLOCKED;
         __asm__ volatile("sti; hlt");

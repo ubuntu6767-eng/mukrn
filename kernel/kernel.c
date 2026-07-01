@@ -22,8 +22,8 @@ void __attribute__((section(".entry"))) kmain(void)
     pic_remap();
     puts("[kernel] PIC remapped\r\n");
 
-    pit_init(100);
-    puts("[kernel] PIT 100 Hz\r\n");
+    pit_init(500);
+    puts("[kernel] PIT 500 Hz\r\n");
 
     outb(PIC1_DATA, 0xFC);
 
