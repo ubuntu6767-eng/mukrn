@@ -16,9 +16,6 @@ done
 echo "=== Assembling ISR stubs ==="
 nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
-echo "=== Building shell ==="
-gcc $CFLAGS -c user/shell.c -o build/shell_user.o
-ld -m elf_x86_64 -Ttext=0x400000 -o build/shell.elf build/shell_user.o
 
 echo "=== Building init ==="
 gcc $CFLAGS -c user/init.c -o build/init_user.o

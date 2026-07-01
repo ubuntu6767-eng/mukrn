@@ -68,9 +68,9 @@ static void test_syscalls(void) {
     S(20,0,0,0,0);
     if(iq==0){ps("  irq_reg/ack: OK\n");ok++;}else{ps("  irq_reg/ack: FAIL\n");fail++;}
 
-    // 24 + 25: inw + outw (test serial port ID)
-    S(25,0x3FA,0xFFFF,0,0);
-    u16 iw=S(24,0x3FA,0,0,0);
+    // 24 + 25: inw + outw (test VBE index register — safe 16-bit port)
+    S(25,0x1CE,4,0,0);
+    u16 iw=S(24,0x1CE,0,0,0);
     (void)iw;
     ps("  inw/outw: OK\n");ok++;
 
