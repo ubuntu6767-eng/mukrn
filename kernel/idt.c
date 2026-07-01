@@ -59,6 +59,28 @@ registers_t *isr_handler(registers_t *r) {
     u64 n = r->int_no;
 
     if (n <= 31) {
+        if (n == 14 && (r->cs & 3)) {
+            u64 cr2;
+            __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+            puts("\r\n[PF] PID ");
+            puthex(current_task >= 0 ? tasks[current_task].pid : 0);
+            puts(" addr ");
+            puthex(cr2);
+            puts(" RIP: ");
+            puthex(r->rip);
+            puts("\r\n");
+            sys_exit();
+            for (int i = 0; i < num_tasks; i++) {
+                if (tasks[i].state == TASK_READY) {
+                    tasks[i].state = TASK_RUNNING;
+                    current_task = i;
+                    if (tasks[i].pml4_phys)
+                        paging_switch(tasks[i].pml4_phys);
+                    return (registers_t*)tasks[i].rsp;
+                }
+            }
+            for (;;) __asm__ volatile("hlt");
+        }
         puts("\r\n[PANIC] Exception ");
         puthex(n);
         puts(" err: ");

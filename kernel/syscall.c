@@ -75,6 +75,8 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         return 0;
     case SYSCALL_SPAWN_AT:
         return sys_spawn_at((void*)arg1, arg2);
+    case SYSCALL_YIELD:
+        return 0;
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);
