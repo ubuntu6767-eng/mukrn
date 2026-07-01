@@ -12,7 +12,6 @@ extern unsigned char _binary_init_elf_end[];
 
 void __attribute__((section(".entry"))) kmain(void)
 {
-    puts("\x1b[2J\x1b[H");
     puts("[kernel] x86-64 long mode\r\n");
 
     idt_init();
