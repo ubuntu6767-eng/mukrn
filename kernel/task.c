@@ -335,6 +335,38 @@ int sys_spawn_at(void *addr, u64 size)
     return -1;
 }
 
+static u64 read_pte(u64 pml4, u64 virt)
+{
+    u64 pml4_i = (virt >> 39) & 0x1FF;
+    u64 pdpt_i = (virt >> 30) & 0x1FF;
+    u64 pdt_i  = (virt >> 21) & 0x1FF;
+    u64 pt_i   = (virt >> 12) & 0x1FF;
+
+    u64 *p = (u64*)pml4;
+    if (!(p[pml4_i] & 1)) return 0;
+    p = (u64*)(p[pml4_i] & ~0xFFFULL);
+    if (!(p[pdpt_i] & 1)) return 0;
+    u64 pde = p[pdpt_i];
+    if (!(pde & 1)) return 0;
+    if (pde & PAGE_PS) return (pde & ~0x1FFFFFULL) | (virt & 0x1FFFFF);
+    p = (u64*)(pde & ~0xFFFULL);
+    if (!(p[pdt_i] & 1)) return 0;
+    u64 pte = p[pdt_i];
+    return (pte & ~0xFFFULL) | (virt & 0xFFF);
+}
+
+static void free_user_range(u64 pml4, u64 start, u64 end)
+{
+    u64 old = paging_root;
+    paging_switch(pml4);
+    for (u64 v = start; v < end; v += 4096) {
+        u64 phys = read_pte(pml4, v);
+        if (phys) pmm_free_page((void*)(phys & ~0xFFFULL));
+        unmap_page(v);
+    }
+    paging_switch(old);
+}
+
 void sys_exit(void)
 {
     if (current_task < 0) return;
@@ -342,6 +374,17 @@ void sys_exit(void)
 
     if (t->wait_idx >= 0)
         tasks[t->wait_idx].state = TASK_READY;
+
+    if (t->stack_phys) {
+        pmm_free_page((void*)t->stack_phys);
+        t->stack_phys = 0;
+    }
+
+    if (t->pml4_phys && t->code_pages) {
+        free_user_range(t->pml4_phys, t->load_addr, t->load_addr + t->code_pages * 4096);
+        u64 stack_top = t->load_addr + 0x100000;
+        free_user_range(t->pml4_phys, stack_top - 4 * 4096, stack_top);
+    }
 
     t->state = TASK_EXITED;
 
@@ -428,14 +471,9 @@ int sys_kill(u64 pid)
             tasks[i].state = TASK_EXITED;
             if (tasks[i].stack_phys) pmm_free_page((void*)tasks[i].stack_phys);
             if (tasks[i].pml4_phys && tasks[i].code_pages) {
-                u64 old = paging_root;
-                paging_switch(tasks[i].pml4_phys);
-                for (u64 j = 0; j < tasks[i].code_pages; j++)
-                    unmap_page(tasks[i].load_addr + j * 4096);
+                free_user_range(tasks[i].pml4_phys, tasks[i].load_addr, tasks[i].load_addr + tasks[i].code_pages * 4096);
                 u64 stack_top = tasks[i].load_addr + 0x100000;
-                for (int k = 0; k < 4; k++)
-                    unmap_page(stack_top - (k + 1) * 4096);
-                paging_switch(old);
+                free_user_range(tasks[i].pml4_phys, stack_top - 4 * 4096, stack_top);
             }
             return 0;
         }
