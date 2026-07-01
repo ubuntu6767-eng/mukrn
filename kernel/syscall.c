@@ -27,8 +27,6 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
     case SYSCALL_OUTB:
         outb((u16)arg1, (u8)arg2);
         return 0;
-    case SYSCALL_SPAWN:
-        return sys_spawn(arg1);
     case SYSCALL_WAIT:
         return sys_wait(arg1);
     case SYSCALL_WAIT_ANY:
@@ -61,6 +59,22 @@ u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4)
         outb(0x20, 0x20);
         if (arg1 >= 8) outb(0xA0, 0x20);
         return 0;
+    case SYSCALL_CLONE:
+        return sys_clone(arg1, arg2, arg3, arg4);
+    case SYSCALL_FUTEX:
+        return sys_futex((u32*)arg1, (int)arg2, (u32)arg3);
+    case SYSCALL_MMAP_PHYS:
+        return sys_mmap_phys(arg1, arg2, arg3, arg4);
+    case SYSCALL_INW: {
+        u16 v;
+        __asm__ volatile("inw %1, %0" : "=a"(v) : "d"((u16)arg1));
+        return v;
+    }
+    case SYSCALL_OUTW:
+        __asm__ volatile("outw %0, %1" : : "a"((u16)arg2), "d"((u16)arg1));
+        return 0;
+    case SYSCALL_SPAWN_AT:
+        return sys_spawn_at((void*)arg1, arg2);
     default:
         puts("[kernel] Unknown syscall: ");
         puthex(n);

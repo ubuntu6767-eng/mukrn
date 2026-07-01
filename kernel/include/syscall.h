@@ -24,6 +24,12 @@
 #define SYSCALL_MPROTECT  18
 #define SYSCALL_BRK       19
 #define SYSCALL_IRQ_ACK   20
+#define SYSCALL_CLONE     21
+#define SYSCALL_FUTEX     22
+#define SYSCALL_MMAP_PHYS 23
+#define SYSCALL_INW       24
+#define SYSCALL_OUTW      25
+#define SYSCALL_SPAWN_AT  26
 
 u64 syscall_handler(u64 n, u64 arg1, u64 arg2, u64 arg3, u64 arg4);
 

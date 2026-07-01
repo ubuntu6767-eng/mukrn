@@ -8,10 +8,6 @@
 extern unsigned char _binary_init_elf_start[];
 extern unsigned char _binary_init_elf_end[];
 
-embed_prog_t embedded[EMBED_COUNT] = {
-    { _binary_init_elf_start,             _binary_init_elf_end,             0x400000, 1 },
-};
-
 task_t tasks[MAX_TASKS];
 int current_task = -1;
 int num_tasks = 0;
@@ -129,6 +125,7 @@ void scheduler_start(void)
     u64 rsp = tasks[0].rsp;
     u64 pml4 = tasks[0].pml4_phys;
     if (!pml4) pml4 = 0x1000;
+    paging_root = pml4;
     __asm__ volatile(
         ".intel_syntax noprefix\n"
         "mov cr3, %1\n"
@@ -205,47 +202,73 @@ int sys_recv(ipc_msg_t *msg)
 static int create_elf(void *binary, u64 size, u64 want_pid)
 {
     if (size < sizeof(elf64_hdr_t)) return -1;
-    elf64_hdr_t *hdr = (elf64_hdr_t*)binary;
-    if (*(u32*)hdr->ident != ELF_MAGIC) return -1;
+    if (size > 65536) return -1;
+    u64 bin_pages = (size + 4095) / 4096;
+
+    void *buf_pages[16];
+    for (u64 i = 0; i < bin_pages; i++) {
+        buf_pages[i] = pmm_alloc_page();
+        if (!buf_pages[i]) {
+            for (u64 j = 0; j < i; j++) pmm_free_page(buf_pages[j]);
+            return -1;
+        }
+    }
+
+    u8 *buf = (u8*)(u64)buf_pages[0];
+    for (u64 i = 0; i < size; i++)
+        buf[i] = ((u8*)binary)[i];
+
+    elf64_hdr_t *hdr = (elf64_hdr_t*)buf;
+    if (*(u32*)hdr->ident != ELF_MAGIC) {
+        for (u64 i = 0; i < bin_pages; i++) pmm_free_page(buf_pages[i]);
+        return -1;
+    }
 
     u64 max_vaddr = 0;
     for (u16 i = 0; i < hdr->phnum; i++) {
-        elf64_phdr_t *ph = (elf64_phdr_t*)((u8*)binary + hdr->phoff + i * hdr->phentsize);
+        elf64_phdr_t *ph = (elf64_phdr_t*)(buf + hdr->phoff + i * hdr->phentsize);
         if (ph->type != PT_LOAD) continue;
         u64 end = ph->vaddr + ph->memsz;
         if (end > max_vaddr) max_vaddr = end;
     }
     max_vaddr = (max_vaddr + 4095) & ~4095ULL;
 
-    if (num_tasks >= MAX_TASKS) return -1;
+    if (num_tasks >= MAX_TASKS) {
+        for (u64 i = 0; i < bin_pages; i++) pmm_free_page(buf_pages[i]);
+        return -1;
+    }
     void *kstack = pmm_alloc_page();
-    if (!kstack) return -1;
+    if (!kstack) {
+        for (u64 i = 0; i < bin_pages; i++) pmm_free_page(buf_pages[i]);
+        return -1;
+    }
     int reuse = -1;
     if (want_pid > 0) {
         for (int i = 0; i < num_tasks; i++) {
             if (tasks[i].pid == want_pid) {
-                if (tasks[i].state != TASK_EXITED) return -1;
+                if (tasks[i].state != TASK_EXITED) {
+                    pmm_free_page(kstack);
+                    for (u64 j = 0; j < bin_pages; j++) pmm_free_page(buf_pages[j]);
+                    return -1;
+                }
                 reuse = i;
             }
         }
     }
     u64 new_pml4 = paging_clone_kernel();
-    if (!new_pml4) return -1;
+    if (!new_pml4) {
+        pmm_free_page(kstack);
+        for (u64 i = 0; i < bin_pages; i++) pmm_free_page(buf_pages[i]);
+        return -1;
+    }
 
     u64 old_root = paging_root;
     __asm__ volatile("cli");
     paging_switch(new_pml4);
 
     for (u16 i = 0; i < hdr->phnum; i++) {
-        elf64_phdr_t *ph = (elf64_phdr_t*)((u8*)binary + hdr->phoff + i * hdr->phentsize);
+        elf64_phdr_t *ph = (elf64_phdr_t*)(buf + hdr->phoff + i * hdr->phentsize);
         if (ph->type != PT_LOAD) continue;
-        if (ph->vaddr < 0x1000) {
-            puts("[kernel] BAD phdr vaddr="); puthex(ph->vaddr);
-            puts(" type="); puthex(ph->type);
-            puts(" filesz="); puthex(ph->filesz);
-            puts(" offset="); puthex(ph->offset);
-            puts("\r\n");
-        }
         u64 vstart = ph->vaddr & ~0xFFFULL;
         u64 vend = (ph->vaddr + ph->memsz + 4095) & ~0xFFFULL;
         for (u64 v = vstart; v < vend; v += 4096) {
@@ -255,7 +278,7 @@ static int create_elf(void *binary, u64 size, u64 want_pid)
             if (!(ph->flags & 2)) pg &= ~(u64)PAGE_WRITABLE;
             map_page(v, (u64)page, pg);
         }
-        u8 *src = (u8*)binary + ph->offset;
+        u8 *src = buf + ph->offset;
         for (u64 j = 0; j < ph->filesz; j++)
             ((u8*)ph->vaddr)[j] = src[j];
     }
@@ -271,6 +294,8 @@ static int create_elf(void *binary, u64 size, u64 want_pid)
 
     paging_switch(old_root);
     __asm__ volatile("sti");
+
+    for (u64 i = 0; i < bin_pages; i++) pmm_free_page(buf_pages[i]);
 
     u64 *sp = (u64*)((u64)kstack + sizeof(registers_t));
     *--sp = 0x23;
@@ -302,16 +327,12 @@ static int create_elf(void *binary, u64 size, u64 want_pid)
     return t->pid;
 }
 
-int sys_spawn(u64 idx)
+int sys_spawn_at(void *addr, u64 size)
 {
-    if (idx >= EMBED_COUNT) return -1;
-    embed_prog_t *p = &embedded[idx];
-    u64 size = (u64)p->end - (u64)p->start;
-    if (size == 0) return -1;
-    u8 *binary = (u8*)p->start;
-    if (size >= 4 && *(u32*)binary == ELF_MAGIC)
-        return create_elf((void*)binary, size, p->fixed_pid);
-    return task_create((void*)binary, size, p->load_addr, p->fixed_pid);
+    if (!addr || size == 0) return -1;
+    if (size >= 4 && *(u32*)addr == ELF_MAGIC)
+        return create_elf(addr, size, 0);
+    return -1;
 }
 
 void sys_exit(void)
@@ -406,9 +427,16 @@ int sys_kill(u64 pid)
         if (tasks[i].pid == pid && tasks[i].state != TASK_EXITED) {
             tasks[i].state = TASK_EXITED;
             if (tasks[i].stack_phys) pmm_free_page((void*)tasks[i].stack_phys);
-            for (u64 j = 0; j < tasks[i].code_pages; j++)
-                unmap_page(tasks[i].load_addr + j * 4096);
-            unmap_page(tasks[i].load_addr + 0x100000 - 4096);
+            if (tasks[i].pml4_phys && tasks[i].code_pages) {
+                u64 old = paging_root;
+                paging_switch(tasks[i].pml4_phys);
+                for (u64 j = 0; j < tasks[i].code_pages; j++)
+                    unmap_page(tasks[i].load_addr + j * 4096);
+                u64 stack_top = tasks[i].load_addr + 0x100000;
+                for (int k = 0; k < 4; k++)
+                    unmap_page(stack_top - (k + 1) * 4096);
+                paging_switch(old);
+            }
             return 0;
         }
     }
@@ -418,12 +446,12 @@ int sys_kill(u64 pid)
 int sys_nanosleep(u64 ns)
 {
     u64 start = ticks;
-    u64 target = ns / 10000;
+    u64 target = ns / 10000000;
     while ((ticks - start) < target) {
         tasks[current_task].state = TASK_BLOCKED;
         __asm__ volatile("sti; hlt");
     }
-    tasks[current_task].state = TASK_READY;
+    tasks[current_task].state = TASK_RUNNING;
     return 0;
 }
 
@@ -473,4 +501,108 @@ int sys_brk(u64 addr)
     u64 prev = heap_brk;
     heap_brk = addr;
     return prev;
+}
+
+int sys_clone(u64 flags, u64 user_stack, u64 entry, u64 arg)
+{
+    (void)flags;
+    if (current_task < 0) return -1;
+    if (num_tasks >= MAX_TASKS) return -1;
+    task_t *parent = &tasks[current_task];
+
+    void *kstack = pmm_alloc_page();
+    if (!kstack) return -1;
+
+    u64 *sp = (u64*)((u64)kstack + sizeof(registers_t));
+    *--sp = 0x23;
+    *--sp = user_stack;
+    *--sp = 0x202;
+    *--sp = 0x2B;
+    *--sp = entry;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = arg;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+
+    task_t *t = &tasks[num_tasks];
+    t->rsp = (u64)sp;
+    t->pid = next_pid++;
+    t->state = TASK_READY;
+    t->stack_phys = (u64)kstack;
+    t->user_stack_phys = 0;
+    t->pml4_phys = parent->pml4_phys;
+    t->load_addr = parent->load_addr;
+    t->code_pages = 0;
+    t->wait_idx = -1;
+    ipc_init_task(t);
+    num_tasks++;
+
+    return t->pid;
+}
+
+#define MAX_FUTEX_WAITERS 128
+static struct {
+    u32 *uaddr;
+    int task_idx;
+} futex_waiters[MAX_FUTEX_WAITERS];
+static int num_futex_waiters = 0;
+
+int sys_futex(u32 *uaddr, int op, u32 val)
+{
+    if (current_task < 0) return -1;
+    if (op == 0) {
+        if (*uaddr != val) return -1;
+        if (num_futex_waiters >= MAX_FUTEX_WAITERS) return -1;
+        futex_waiters[num_futex_waiters].uaddr = uaddr;
+        futex_waiters[num_futex_waiters].task_idx = current_task;
+        num_futex_waiters++;
+        tasks[current_task].state = TASK_BLOCKED;
+        return 0;
+    }
+    if (op == 1) {
+        int woken = 0;
+        for (int i = 0; i < num_futex_waiters && woken < (int)val; i++) {
+            if (futex_waiters[i].uaddr == uaddr) {
+                int idx = futex_waiters[i].task_idx;
+                if (tasks[idx].state == TASK_BLOCKED) {
+                    tasks[idx].state = TASK_READY;
+                    woken++;
+                }
+                futex_waiters[i] = futex_waiters[--num_futex_waiters];
+                i--;
+            }
+        }
+        return woken;
+    }
+    return -1;
+}
+
+int sys_mmap_phys(u64 virt, u64 phys, u64 size, u64 flags)
+{
+    if (current_task < 0) return -1;
+    u64 pg_flags = PAGE_PRESENT | PAGE_USER;
+    if (flags & 2) pg_flags |= PAGE_WRITABLE;
+    if (flags & 4) pg_flags |= 0x10;
+    u64 old = paging_root;
+    paging_switch(tasks[current_task].pml4_phys);
+    u64 vstart = virt & ~0xFFFULL;
+    u64 vend = (virt + size + 4095) & ~0xFFFULL;
+    u64 pstart = phys & ~0xFFFULL;
+    for (u64 v = vstart, p = pstart; v < vend; v += 4096, p += 4096)
+        map_page(v, p, pg_flags);
+    paging_switch(old);
+    return 0;
 }

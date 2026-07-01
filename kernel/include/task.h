@@ -40,16 +40,6 @@ typedef struct {
     u32 ipc_count;
 } task_t;
 
-#define EMBED_COUNT 1
-typedef struct {
-    unsigned char *start;
-    unsigned char *end;
-    u64 load_addr;
-    u64 fixed_pid;
-} embed_prog_t;
-
-extern embed_prog_t embedded[];
-
 extern task_t tasks[MAX_TASKS];
 extern int current_task;
 extern int num_tasks;
@@ -62,21 +52,21 @@ void ipc_init_task(task_t *t);
 u64 sys_getpid(void);
 int sys_send(u64 target_pid, u64 type, const u8 *data, u64 len);
 int sys_recv(ipc_msg_t *msg);
-int sys_spawn(u64 idx);
 void sys_exit(void);
 int sys_wait(u64 pid);
 int sys_wait_any(void);
 int sys_getstate(u64 pid);
 int sys_mmap(u64 virt, u64 size, u64 flags);
 int sys_munmap(u64 virt, u64 size);
-int sys_read_sector(u64 drive, u64 lba, u8 *buf);
-int sys_write_sector(u64 drive, u64 lba, u8 *buf);
-int sys_spawn_exec(void *elf, u64 size, u64 *pid_out);
 int sys_kill(u64 pid);
 int sys_nanosleep(u64 ns);
 u64 sys_getticks(void);
 void sys_shutdown(void);
 int sys_mprotect(u64 virt, u64 size, u64 flags);
 int sys_brk(u64 addr);
+int sys_clone(u64 flags, u64 user_stack, u64 entry, u64 arg);
+int sys_futex(u32 *uaddr, int op, u32 val);
+int sys_mmap_phys(u64 virt, u64 phys, u64 size, u64 flags);
+int sys_spawn_at(void *addr, u64 size);
 
 #endif

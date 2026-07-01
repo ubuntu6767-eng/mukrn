@@ -37,9 +37,6 @@ void __attribute__((section(".entry"))) kmain(void)
     gdt_setup_tss();
 
     u64 init_size = (u64)_binary_init_elf_end - (u64)_binary_init_elf_start;
-    puts("[kernel] Init size: ");
-    puthex(init_size);
-    puts(" bytes\r\n");
     task_create((void*)_binary_init_elf_start, init_size, 0x400000, 1);
     puts("[kernel] Starting scheduler...\r\n");
     scheduler_start();
