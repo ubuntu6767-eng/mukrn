@@ -97,8 +97,8 @@ static int mouse_poll(s32 *dx, s32 *dy, u8 *buttons)
     pkt[2] = byte; st = 0;
 
     *buttons = pkt[0] & 7;
-    *dx = (pkt[0] & 0x10) ? ((s32)(signed char)pkt[1]) - 256 : (s32)pkt[1];
-    *dy = (pkt[0] & 0x20) ? ((s32)(signed char)pkt[2]) - 256 : (s32)pkt[2];
+    *dx = (pkt[0] & 0x10) ? (s32)pkt[1] - 256 : (s32)pkt[1];
+    *dy = (pkt[0] & 0x20) ? (s32)pkt[2] - 256 : (s32)pkt[2];
     *dy = -*dy;
     return 1;
 }

@@ -9,7 +9,7 @@
 #define SYSCALL_RECV      3
 #define SYSCALL_INB       4
 #define SYSCALL_OUTB      5
-#define SYSCALL_SPAWN     6
+// 6 was SYSCALL_SPAWN (unimplemented, use SYSCALL_SPAWN_AT 26)
 #define SYSCALL_WAIT      7
 #define SYSCALL_WAIT_ANY  8
 #define SYSCALL_GETSTATE  9
