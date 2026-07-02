@@ -17,20 +17,9 @@ echo "=== Assembling ISR stubs ==="
 nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
 
-echo "=== Building cursor ==="
-gcc $CFLAGS -c _sdk/examples/cursor.c -o build/cursor_user.o
-ld -m elf_x86_64 -Ttext=0x400000 -o build/cursor.elf build/cursor_user.o
-
-echo "=== Embedding cursor ==="
-cd build
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    cursor.elf cursor_embed.o
-cd - > /dev/null
-
 echo "=== Building init ==="
 gcc $CFLAGS -c user/init.c -o build/init_user.o
-ld -m elf_x86_64 -Ttext=0x400000 -o build/init.elf build/init_user.o build/cursor_embed.o
+ld -m elf_x86_64 -Ttext=0x400000 -o build/init.elf build/init_user.o
 
 echo "=== Embedding init ==="
 cd build
