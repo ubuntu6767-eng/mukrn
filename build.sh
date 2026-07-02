@@ -19,17 +19,10 @@ nasm -f elf64 -o build/isr_stubs.o kernel/isr_stubs.asm
 
 echo "=== Building init ==="
 gcc $CFLAGS -c user/init.c -o build/init_user.o
+ld -m elf_x86_64 -Ttext=0x400000 -o build/init.elf build/init_user.o
 
-echo "=== Building thick_line ==="
-gcc $CFLAGS -c user/thick_line.c -o build/thick_line_user.o
-ld -m elf_x86_64 -Ttext=0x400000 -o build/thick_line.elf build/thick_line_user.o
-
-echo "=== Embedding programs ==="
+echo "=== Embedding init ==="
 cd build
-objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    thick_line.elf thick_line_embed.o
-ld -m elf_x86_64 -Ttext=0x400000 -o init.elf ../build/init_user.o thick_line_embed.o
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
     init.elf init_embed.o
@@ -71,5 +64,4 @@ SIZE=$(stat -c%s build/os_image.bin)
 PADDED=$(( (SIZE + 1048575) / 1048576 * 1048576 ))
 truncate -s $PADDED build/os_image.bin
 echo "Image: $SIZE bytes (padded to $PADDED)"
-
 
