@@ -470,15 +470,23 @@ static int read_num(void)
 
 ## Framebuffer (VBE)
 
-The kernel enables VBE in the bootloader with a 640x480x32bpp mode. The linear framebuffer is at physical address 0xFD000000.
+The bootloader enables VBE with a 640×480×32bpp mode. The linear framebuffer is at physical address 0xFD000000.
 
-To draw pixels from a user program:
+To draw pixels from a user program you must (1) set the VBE mode registers, (2) map the framebuffer, then (3) write to it.
 
 ```c
-// Enable VBE extended registers
-sys(25, 0x1CE, 0xB0C5, 0, 0);  // VBE index: enable
-sys(25, 0x1CE, 4, 0, 0);       // VBE index: display start
-sys(25, 0x1CF, 0x41, 0, 0);    // VBE data: set bit 0 (LFB enabled)
+// Helper: write to a VBE register (index = 0x1CE, data = 0x1CF)
+#define VI 0x1CE
+#define VD 0x1CF
+static void vw(u16 i, u16 v) { sys(25, VI, i, 0, 0); sys(25, VD, v, 0, 0); }
+
+// Set up VBE mode
+vw(0, 0xB0C5);         // enable VBE extended registers
+vw(4, 0);              // display start = 0
+vw(1, 640);            // X resolution
+vw(2, 480);            // Y resolution
+vw(3, 32);             // bits per pixel
+vw(4, 0x41);           // bit 0 = LFB enabled
 
 // Map the framebuffer into user space
 // Virtual 0xFD00000, Physical 0xFD000000, 640*480*4 bytes, flags=6 (writable+no cache)
@@ -489,14 +497,19 @@ volatile u32 *fb = (u32*)0xFD00000;
 fb[y * 640 + x] = 0x00RRGGBB;  // 32-bit color
 ```
 
+A simplified 3-line version (enable + display start) does *not* set the resolution and will leave the screen in a wrong mode — always use the full 6-line sequence above.
+
 ### Draw a square
 
 ```c
 void _start(void)
 {
-    sys(25, 0x1CE, 0xB0C5, 0, 0);
-    sys(25, 0x1CE, 4, 0, 0);
-    sys(25, 0x1CF, 0x41, 0, 0);
+    vw(0, 0xB0C5);
+    vw(4, 0);
+    vw(1, 640);
+    vw(2, 480);
+    vw(3, 32);
+    vw(4, 0x41);
     sys(23, 0xFD00000, 0xFD000000, 640*480*4, 6);
 
     volatile u32 *fb = (u32*)0xFD00000;
@@ -510,6 +523,21 @@ void _start(void)
 
     for (;;) __asm__ volatile("pause");
 }
+```
+
+### Animation gotcha
+
+When moving a shape across the framebuffer, check bounds **before** updating the position, not after. If `y` goes negative before you flip the direction, `fb[y * 640 + x]` will page‑fault (accessing memory before the framebuffer start at 0xFD00000).
+
+```c
+// Correct
+if (dy > 0 && y + dy + H > 480) dy = -dy;
+if (dy < 0 && y + dy < 0) dy = -dy;
+y += dy;
+
+// Wrong — y can underflow to -1 and crash
+// y += dy;
+// if (y < 0) dy = -dy;
 ```
 
 ## Writing a User Program
@@ -554,26 +582,45 @@ ld -m elf_x86_64 -Ttext=0x400000 -o myapp.elf myapp.o
 
 ### Embed into the kernel
 
-1. Copy `myapp.elf` to `user/myapp.elf`.
+1. Write your program and save it as `user/myapp.c`.
 
 2. Edit `user/init_procs.h`:
 
 ```c
+extern const unsigned char _binary_myapp_elf_start[];
+extern const unsigned char _binary_myapp_elf_end[];
+
 static const spawn_entry_t spawn_list[] = {
     {"myapp", _binary_myapp_elf_start, _binary_myapp_elf_end},
 };
 static const int spawn_count = 1;
 ```
 
-3. Add the embed step to `build.sh`, right after the init embedding:
+3. Add the build and embed steps to `build.sh` **before** the init embedding block:
 
 ```bash
+echo "=== Building myapp ==="
+gcc $CFLAGS -c user/myapp.c -o build/myapp_user.o
+ld -m elf_x86_64 -Ttext=0x400000 -o build/myapp.elf build/myapp_user.o
+
+echo "=== Embedding programs ==="
+cd build
 objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
     --rename-section .data=.rodata,alloc,load,readonly,data,contents \
-    user/myapp.elf build/myapp_embed.o
+    myapp.elf myapp_embed.o
 ```
 
-4. Add `build/myapp_embed.o` to the kernel link command (the long `ld` line in `build.sh`).
+4. Link the embed object **into init.elf** (not the kernel!), right before the `objcopy` that creates `init_embed.o`:
+
+```bash
+ld -m elf_x86_64 -Ttext=0x400000 -o init.elf \
+    ../build/init_user.o myapp_embed.o
+objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
+    --rename-section .data=.rodata,alloc,load,readonly,data,contents \
+    init.elf init_embed.o
+```
+
+The `_binary_*` symbols must be visible to init.elf (user-space), so the embed.o must be linked there — adding it to the kernel link command will not make them available to init.
 
 5. Rebuild:
 
@@ -761,6 +808,8 @@ LICENSE         — MIT license
 - Syscall 6 (spawn) is not implemented. Use syscall 26 (spawn_at) for ELF64 binaries.
 - There is no filesystem driver in v0.1a. Store data in the program binary or generate it with code.
 - IPC is non-blocking on receive. Check the return value: 0 = message received, -1 = queue empty.
+- **Embedding user programs:** The `_binary_*` symbols from `objcopy` must be visible to `init.elf` (user-space), not the kernel. Link `*_embed.o` into `init.elf`, not into `kernel.bin`. See the embedding section above for the exact `build.sh` changes.
+- **Framebuffer bounds:** When animating on the framebuffer, always clamp the position before writing to it. A negative `y` that underflows will access memory before `0xFD00000` and cause a page fault.
 
 ## License
 
