@@ -7,8 +7,11 @@ typedef struct {
     const unsigned char *end;
 } spawn_entry_t;
 
+extern const unsigned char _binary_cursor_elf_start[];
+extern const unsigned char _binary_cursor_elf_end[];
+
 static const spawn_entry_t spawn_list[] = {
-    //
+    {"cursor", _binary_cursor_elf_start, _binary_cursor_elf_end},
 };
 
-static const int spawn_count = 0;
+static const int spawn_count = 1;
