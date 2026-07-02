@@ -2,7 +2,7 @@
 
 A minimal x86-64 microkernel in ~2300 lines of C and assembly.
 
-**Status:** v0.1a — alpha stage. Everything works but expect rough edges.
+**Status:** v0.2a — alpha stage. Everything works but expect rough edges.
 
 ## Quick Start
 
